@@ -227,6 +227,181 @@ class BusData:
 		return None
 
 
+class InductionData:
+	def __init__(self, flag=1, sid=-1):
+		"""
+
+		:param int flag: (optional=1) - Only in-service machines at in-service busbars
+		:param int sid: (optional=-1) - Allows customer region to be defined
+		"""
+		# DataFrames populated with type and voltages for each study
+		# Index of DataFrame is busbar number as an integer
+		self.df = pd.DataFrame()
+
+		# constants
+		self.logger = logging.getLogger(constants.Logging.logger_name)
+
+		self.flag = flag
+		self.sid = sid
+
+		self.count = -1
+
+	def add_to_idev(self, target):
+		"""
+			Function will add impendance data for machines if none exist
+		:param str target: Existing idev file to append machine impedance data to and close
+		:return None:
+		"""
+
+		if self.get_count() > 0:
+			self.logger.error('There are induction machines in the model but the script has not been developed to '
+							  'take these into account')
+
+		# Append extra 0 to end of line
+		with open(target, 'a') as csv_file:
+			csv_file.write('0')
+
+		return None
+
+	def get_count(self, reset=False):
+		"""
+			Updates induction machine data from SAV case
+		"""
+		# Only checks if not already empty
+		if self.count == -1 or reset:
+			# Declare functions
+			func_count = psspy.aindmaccount
+
+			# Retrieve data from PSSE
+			ierr_count, number = func_count(
+				sid=self.sid,
+				flag=self.flag)
+
+			if ierr_count > 0:
+				self.logger.critical(
+					(
+						'Unable to retrieve the number of induction machines in the PSSE SAV case and the following error '
+						'codes {} from the functions <{}>'
+					).format(ierr_count, func_count.__name__)
+				)
+				raise SyntaxError('Error importing data from PSSE SAV case')
+
+			self.count = number
+		return self.count
+
+
+class MachineData:
+	"""
+		Class will contain all of the Machine Data
+	"""
+	def __init__(self, flag=2, sid=-1):
+		"""
+
+		:param int flag:
+		:param int sid:
+		"""
+		self.sid = sid
+		self.flag = flag
+		self.logger = logging.getLogger(constants.Logging.logger_name)
+
+		self.c = constants.Machines
+
+		self.df = pd.DataFrame()
+
+	def update(self):
+		"""
+			Update dataframe with the data necessary for the idev file
+		:return None:
+		"""
+		# Declare functions
+		func_int = psspy.amachint
+		func_real = psspy.amachreal
+		func_char = psspy.amachchar
+
+		# Retrieve data from PSSE
+		ierr_int, iarray = func_int(
+			sid=self.sid,
+			flag=self.flag,
+			string=(self.c.bus, ))
+		ierr_real, rarray = func_real(
+			sid=self.sid,
+			flag=self.flag,
+			string=(self.c.x_subtr, self.c.x_trans, self.c.x_synch))
+		ierr_char, carray = func_char(
+			sid=self.sid,
+			flag=self.flag,
+			string=(self.c.identifier,))
+
+		if ierr_int > 0 or ierr_char > 0 or ierr_real > 0:
+			self.logger.critical(
+				(
+					'Unable to retrieve the busbar type codes from the SAV case and PSSE returned the '
+					'following error codes {}, {} and {} from the functions <{}>, <{}> and <{}>'
+				).format(ierr_int, ierr_real, ierr_char, func_int.__name__, func_real.__name__, func_char.__name__)
+			)
+			raise SyntaxError('Error importing data from PSSE SAV case')
+
+		# Combine data into single list of lists
+		data = iarray + rarray + carray
+		# Column headers initially in same order as data but then reordered to something more useful for exporting
+		# in case needed
+		initial_columns = [self.c.bus, self.c.x_subtr, self.c.x_trans, self.c.x_synch, self.c.identifier]
+
+		# Transposed so columns in correct location and then columns reordered to something more suitable
+		df = pd.DataFrame(data).transpose()
+		df.columns = initial_columns
+
+		self.df = df
+
+		return None
+
+	def produce_idev(self, target):
+		"""
+			Produces an idev file based on the data in the PSSE model in the appropriate format for importing into
+			the BKDY fault current calculation method
+		:param str target:  Target path to save the idev file to as a csv
+		:return None:
+		"""
+
+		self.update()
+
+		df = self.df
+
+		df[self.c.x11] = df[self.c.x_subtr]
+		df[self.c.x1d] = df[self.c.x_trans]
+		df[self.c.xd] = df[self.c.x_synch]
+
+		self.logger.debug(
+			(
+				'Default time constant values assumed for all machines and q axis reactance value '
+				'all assumed to be equal to d axis reactance values.\n'
+				'{} = {}, {} = {}\n'
+				'{} = {}, {} = {}'
+			).format(
+				self.c.t1d0, constants.SHEPD.t1d0, self.c.t1q0, constants.SHEPD.t1q0,
+				self.c.t11d0, constants.SHEPD.t11d0, self.c.t11q0, constants.SHEPD.t11q0
+			)
+		)
+		df[self.c.t1d0] = constants.SHEPD.t1d0
+		df[self.c.t11d0] = constants.SHEPD.t11d0
+		df[self.c.t1q0] = constants.SHEPD.t1q0
+		df[self.c.t11q0] = constants.SHEPD.t11q0
+		df[self.c.x1q] = df[self.c.x1d]
+		df[self.c.xq] = df[self.c.xd]
+
+		# Reorder columns into format needed for idev file
+		df = df[self.c.bkdy_col_order]
+
+		# Export to a cav file
+		df.to_csv(target, header=False, index=False)
+
+		# Add in empty 0 to mark the end of the file
+		with open(target, 'a') as csv_file:
+			csv_file.write('0\n')
+
+		return None
+
+
 class PsseControl:
 	"""
 		Class to obtain and store the PSSE data
@@ -237,6 +412,13 @@ class PsseControl:
 		self.sav_name = str()
 		self.sid = sid
 		self.areas = areas
+
+		# Status flag for whether SAV case is converted or not
+		self.converted = False
+
+		# Flag that is set to True if any of the errors that occur could affect the accuracy of the BKDY calculated
+		# fault levels
+		self.bkdy_issue = False
 
 	def load_data_case(self, pth_sav=None):
 		"""
@@ -277,6 +459,8 @@ class PsseControl:
 
 		# Set the PSSE load flow tolerances to ensure all studies done with same parameters
 		self.set_load_flow_tolerances()
+
+		self.converted = False
 
 		return None
 
@@ -413,3 +597,240 @@ class PsseControl:
 			convergent = False
 
 		return convergent
+
+	def convert_sav_case(self):
+		"""
+			To make it possible to carry out fault current studies using the BKDY method it is necessary
+			to convert the generators and loads to norton equivalent sources
+			(see 10.12 of PSSE POM v33)
+			This module converts the SAV case and ensures a flag is set determining the status.
+			Once converted, SAV case needs to be reloaded to restore to original form
+		:return None:
+		"""
+		if not self.converted:
+			self.convert_gen()
+			self.convert_load()
+			self.converted = True
+		else:
+			self.logger.debug('Attempted call to convert generation and load but are already converted')
+
+		# Generators will now be ordered
+		func_ordr = psspy.ordr
+		ierr = func_ordr(opt=0)
+		if ierr > 0:
+			self.logger.critical(
+				(
+					'Error ordering the busbars into a sparsity matrix using function <{}> which returned '
+					'error code {}'
+				).format(func_ordr.__name__, ierr)
+			)
+
+		# Factorize admittance matrix
+		func_fact = psspy.fact
+		ierr = func_fact()
+		if ierr > 0:
+			self.logger.critical(
+				(
+					'Error when trying to factorize admittance matrix using function <{}> which returned error code {}'
+				).format(func_fact.__name__, ierr)
+			)
+
+		# TODO: TYSL - Do not believe this is required
+
+		return None
+
+	def convert_gen(self):
+		"""
+			Script to control the conversion of generation
+		:return None: Will only get to end if successful
+		"""
+		self.logger.debug('Converting generation in model ready for BKDY study')
+		# Defines the option for psspy.cong with regards to treatment of conventional machines and induction machines
+		# 0 = Uses Zsorce for conventional machines
+		# 1 = Uses X'' for conventional machines
+		# 2 = Uses X' for conventional machines
+		# 3 = Uses X for conventional machines
+		x_type = 0
+
+		# Check that no induction machines exist since otherwise assumptions above are not applicable
+		if InductionData().get_count() > 0:
+			self.logger.warning(
+				(
+					'There are induction machines included in the PSSE sav case {}.  Some of the assumptions in the '
+					'these scripts may no longer be valid.'
+				).format(self.sav_name)
+			)
+			self.bkdy_issue = True
+
+		# Convert generators to suitable equivalent ready for study, only if not already converted
+		func_cong = psspy.cong
+		ierr = func_cong(opt=x_type)
+
+		if ierr == 1 or ierr == 5:
+			self.logger.critical(
+				'Critical error in execution of function <{}> which returned the error code {}'
+			).format(func_cong.__name__, ierr)
+			raise SyntaxError('Scripting error when trying to convert generators')
+		elif ierr == 2:
+			self.logger.warning(
+				'Attempted to convert generators when already converted, this is not an issue but indicates a script '
+				'issue.'
+			)
+		elif ierr == 3 or ierr == 4:
+			self.logger.error(
+				(
+					'Conversion of generators occurred due to incorrect machine impedances or stalled induction '
+					'machines.  The function <{}> returned error code {} and you are suggested to check the '
+					'contents of the SAV case {}'
+				).format(func_cong.__name__, ierr, self.sav)
+			)
+			raise ValueError('Unable to convert generators')
+
+		return None
+
+	def convert_load(self):
+		"""
+			Script to control the conversion of load
+		:return None:  Will only get to end if successful
+		"""
+		self.logger.debug('Converting loads in model ready for BKDY study')
+
+		# Method of conversion of loads
+		status1 = 0  # If set to 1 or 2 then loads are reconstructed
+		# Whether loads connected to some busbars should be skipped
+		status2 = 0  # If set to 1 then only type 1 buses, if set to 2 then type 2 and 3 buses
+
+		# TODO: Sensitivty check to determine if these need to be available as an input
+		# Constants used to define the way that loads are treated in the conversion
+		# Loads converted to constant admittance in active and reactive power
+		loadin1 = 0.0
+		loadin2 = 1.0
+		loadin3 = 0.0
+		loadin4 = 1.0
+
+		func_conl = psspy.conl
+		# Multiple runs of the function are necessary to convert the loads
+		# Run 1 = Initialise for load conversion
+		run_count = 1
+		ierr, _ = func_conl(
+			sid=self.sid,
+			apiopt=run_count,
+			status1=status1
+		)
+		if ierr > 0:
+			self.logger.critical(
+				(
+					'Unable to convert the loads using function <{}> which returned error code {} for sav case {} '
+					'during load conversion {}'
+				).format(func_conl.__name__, ierr, self.sav, run_count)
+			)
+			raise ValueError('Unable to convert loads')
+
+		# Run 3 = Post processing house keeping
+		run_count = 2
+
+		# Ensures that a second run is carried out if unconverted loaded remain in the system model
+		unconverted_loads = 1
+		i = 0
+		while unconverted_loads > 0:
+			i += 1
+			ierr, unconverted_loads = func_conl(
+				sid=self.sid,
+				all=1,
+				apiopt=run_count,
+				status2=status2,
+				loadin1=loadin1,
+				loadin2=loadin2,
+				loadin3=loadin3,
+				loadin4=loadin4
+			)
+			if ierr > 0:
+				self.logger.critical(
+					(
+						'Unable to convert the loads using function <{}> which returned error code {} for sav case {} '
+						'during load conversion {}'
+					).format(func_conl.__name__, ierr, self.sav, run_count)
+				)
+				raise ValueError('Unable to convert loads')
+
+			# Catch in case stuck in infinite loop
+			if i > 3:
+				self.logger.critical(
+					(
+						'Trying to convert loads resulted in lots of calls to <{}> with apiopt={}.  In total {} '
+						'iterations took place and still the number of unconverted loads == {}'
+					).format(func_conl.__name__, run_count, i, unconverted_loads)
+				)
+				raise SyntaxError('Uncontrolled iteration')
+
+		# Run 2 = Convert the loads
+		run_count = 3
+		ierr, _ = func_conl(
+			sid=self.sid,
+			apiopt=run_count
+		)
+		if ierr > 0:
+			self.logger.critical(
+				(
+					'Unable to convert the loads using function <{}> which returned error code {} for sav case {} '
+					'during load conversion {}'
+				).format(func_conl.__name__, ierr, self.sav, run_count)
+			)
+			raise ValueError('Unable to convert loads')
+
+		return None
+
+
+class BkdyFaultStudy:
+	"""
+		Class that contains all the routines necessary for the BKDY fault study method
+	"""
+	def __init__(self, psse_control):
+		"""
+			Function deals with the processing of all the routines necessary to calculate the fault currents using the BKDY method
+		:param PsseControl psse_control:
+		"""
+		self.psse = psse_control
+		# Subsystem used for selecting all the busbars
+		self.sid = 1
+
+		self.logger = logging.getLogger(constants.Logging.logger_name)
+		self.breaker_duty_file = str()
+
+	def create_breaker_duty_file(self, target_path):
+		self.breaker_duty_file = target_path
+
+		mac_data = MachineData()
+		mac_data.produce_idev(target=target_path)
+		induction_machines = InductionData()
+		induction_machines.add_to_idev(target=target_path)
+
+	def main(self):
+		"""
+			Main calculation processes
+		:return:
+		"""
+		# TODO: Define bus subsystem to only return faults for particular buses
+		# TODO:
+
+		# Convert model
+		self.psse.convert_sav_case()
+
+		func_bkdy = psspy.bkdy
+		# TODO: ALL needs to be defined with an input once the bus subsystem has been defined
+		# TODO Fault time to be defined
+		ierr = func_bkdy(
+			sid=self.sid,
+			all=1,
+			apiopt=1,
+			lvlbak=-1,
+			flttim=constants.fault_time,
+			bfile=self.breaker_duty_file)
+
+		if ierr > 0:
+			self.logger.critical(
+				(
+					'Error occured trying to calculate BKDY which returned the following error code {} from the function '
+					'<{}>'
+				).format(ierr, func_bkdy.__name__)
+			)

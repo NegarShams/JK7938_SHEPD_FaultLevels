@@ -12,8 +12,9 @@
 import os
 
 # Set to True to run in debug mode and therefore collect all output to window
-DEBUG_MODE = False
+DEBUG_MODE = True
 
+fault_time = 0.06
 
 class SHEPD:
 	"""
@@ -38,6 +39,12 @@ class SHEPD:
 
 	# This is a threshold value, circuits with ratings less than this are reported and ignored
 	rating_threshold = 0
+
+	# Default time constant values to assume
+	t1d0 = 0.04
+	t11d0 = 0.12
+	t1q0 = t1d0
+	t11q0 = t11d0
 
 	def __init__(self):
 		""" Purely added to avoid error message"""
@@ -122,6 +129,30 @@ class PSSE:
 				break
 
 		return self.psse_py_path, self.psse_os_path
+
+
+class Machines:
+	bus = 'NUMBER'
+	identifier = 'ID'
+	x_synch = 'XSYNCH'
+	x_trans = 'XTRANS'
+	x_subtr = 'XSUBTR'
+
+	t1d0 = "T'd0"
+	t11d0 = "T''d0"
+	t1q0 = "T'q0"
+	t11q0 = "T''q0"
+
+	xd = 'Xd'
+	xq = 'Xq'
+	x1d = "X'd"
+	x1q = "X'q"
+	x11 = "X''"
+
+	bkdy_col_order = [bus, identifier, t1d0, t1q0, t11d0, t11q0, xd, xq, x1d, x1q, x11]
+
+	def __init__(self):
+		pass
 
 
 class Busbars:
