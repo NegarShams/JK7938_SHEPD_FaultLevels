@@ -17,6 +17,50 @@ import sys
 import os
 import logging
 import pandas as pd
+import re
+import math
+
+
+def extract_values(line, expected_length=0):
+	"""
+		Extract values from line and if can be converted to a float return as list
+	:param str line:  Line to be processed and split so that its float values can be extracted
+	:param int expected_length: (optional) Used to check that the number of parameters returned matches
+								the expected number
+	:return list extracted:  List of values that have been extracted
+	"""
+	logger = logging.getLogger(constants.Logging.logger_name)
+
+	# Check for any NaN values in line and if so convert to 0.0
+	# TODO: Add error message reporting to warn user that this has happened
+	line = line.replace(constants.BkdyFileOutput.nan_value, constants.BkdyFileOutput.nan_replacement)
+
+	reg_search = constants.BkdyFileOutput.reg_search
+	# reg find all returns a list of lists showing which of the search items matched
+	data = reg_search.findall(line)
+	# Convert into a flat list, removing the blank strings and converting to floats
+	extracted = [float(item) for sublist in data for item in sublist if item != '']
+
+	# Error processing to check if lengths as expected
+	if (
+			len(extracted) != expected_length and
+			expected_length > 0
+			and constants.BkdyFileOutput.infinity_error not in line
+			and 'Infinity' not in line
+	):
+		logger.error(
+			(
+				'Processing of the string below into a list of floats returned a list of values '
+				'different to what was expected.\n'
+				'Therefore it is not possible to associate the specific list items to parameters\n'
+				'{}\n'
+				'The following values were extracted:\n'
+				'{}'
+			).format(line, extracted)
+		)
+		raise ValueError('Not possible to reliably process results, see log output')
+
+	return extracted
 
 
 class InitialisePsspy:
@@ -45,11 +89,16 @@ class InitialisePsspy:
 			os.environ['PATH'] += ';{}'.format(self.psse_py_path)
 
 		global psspy
-		# #global pssarrays
+		global pssarrays
 		try:
+			# Import psspy used for manipulating PSSE
 			import psspy
 			psspy = reload(psspy)
 			self.psspy = psspy
+			# Import pssarrays used for data extraction from PSSE
+			import pssarrays
+			pssarrays = reload(pssarrays)
+			self.pssarrays = pssarrays
 			# #import pssarrays
 			# #self.pssarrays = pssarrays
 		except ImportError:
@@ -98,17 +147,14 @@ class BusData:
 		Stores busbar data
 	"""
 
-	def __init__(self, flag=2, sid=-1):
+	def __init__(self, flag=1, sid=-1):
 		"""
-
-		:param int flag: (optional=2) - Includes in and out of service busbars
+		:param int flag: (optional=1) - Include only in-service busbars
 		:param int sid: (optional=-1) - Allows customer region to be defined
 		"""
 		# DataFrames populated with type and voltages for each study
 		# Index of DataFrame is busbar number as an integer
-		self.df_state = pd.DataFrame()
-		self.df_voltage = pd.DataFrame()
-		self.df_limits = pd.DataFrame()
+		self.df = pd.DataFrame()
 
 		# Populated with list of contingency names where voltages exceeded
 		self.voltages_exceeded_steady = list()
@@ -122,33 +168,13 @@ class BusData:
 		self.sid = sid
 		self.update()
 
-	def get_voltages(self):
-		"""
-			Returns the voltage data from the latest load flow
-		:return (list, list), (nominal, voltage):
-		"""
-		func_real = psspy.abusreal
-		ierr_real, rarray = func_real(
-			sid=self.sid,
-			flag=self.flag,
-			string=(self.c.nominal, self.c.voltage))
-
-		if ierr_real > 0:
-			self.logger.critical(
-				(
-					'Unable to retrieve the busbar voltage data from the SAV case and PSSE returned '
-					'the following error code {} from the function <{}>').format(ierr_real, func_real.__name__)
-			)
-			raise SyntaxError('Error importing data from PSSE SAV case')
-
-		return rarray[0], rarray[1]
-
 	def update(self):
 		"""
 			Updates busbar data from SAV case
 		"""
 		# Declare functions
 		func_int = psspy.abusint
+		func_real = psspy.abusreal
 		func_char = psspy.abuschar
 
 		# Retrieve data from PSSE
@@ -156,30 +182,32 @@ class BusData:
 			sid=self.sid,
 			flag=self.flag,
 			string=(self.c.bus, self.c.state))
+		ierr_real, rarray = func_real(
+			sid=self.sid,
+			flag=self.flag,
+			string=(self.c.nominal, self.c.voltage))
 		ierr_char, carray = func_char(
 			sid=self.sid,
 			flag=self.flag,
 			string=(self.c.bus_name,))
 
-		if ierr_int > 0 or ierr_char > 0:
+		if ierr_int > 0 or ierr_char > 0 or ierr_real > 0:
 			self.logger.critical(
 				(
-					'Unable to retrieve the busbar type codes from the SAV case and PSSE returned the '
-					'following error codes {} and {} from the functions <{}> and <{}>'
-				).format(ierr_int, ierr_char, func_int.__name__, func_char.__name__)
+					'Unable to retrieve the busbar data from the SAV case and PSSE returned the '
+					'following error codes {}, {} and {} from the functions <{}>, <{}> and <{}>'
+				).format(
+					ierr_int, ierr_char, ierr_real,
+					func_int.__name__, func_char.__name__, func_real.__name__
+				)
 			)
 			raise SyntaxError('Error importing data from PSSE SAV case')
 
-		nominal, voltage = self.get_voltages()
-
 		# Combine data into single list of lists
-		data = iarray + [nominal] + [voltage] + carray
+		data = iarray + rarray + carray
 		# Column headers initially in same order as data but then reordered to something more useful for exporting
 		# in case needed
 		initial_columns = [self.c.bus, self.c.state, self.c.nominal, self.c.voltage, self.c.bus_name]
-
-		state_columns = [self.c.bus, self.c.bus_name, self.c.nominal, self.c.state]
-		voltage_columns = [self.c.bus, self.c.bus_name, self.c.nominal, self.c.voltage]
 
 		# Transposed so columns in correct location and then columns reordered to something more suitable
 		df = pd.DataFrame(data).transpose()
@@ -187,44 +215,7 @@ class BusData:
 		df.index = df[self.c.bus]
 
 		# Since not a contingency populate all columns
-		self.df_state = df[state_columns]
-		self.df_voltage = df[voltage_columns]
-
-		# Insert steady_state voltage limits
-		self.add_voltage_limits(df=self.df_voltage)
-
-	def add_voltage_limits(self, df):
-		"""
-			Function will insert the upper and lower voltage limits for each busbar into the DataFrame
-		:param pd.DataFrame df: DataFrame for which voltage limits should be inserted into (must contain busbar nominal
-				voltage under the column [c.nominal]
-		"""
-
-		# Get voltage limits from constants which are returned as a dictionary
-		v_limits = constants.SHEPD.steady_state_limits
-
-		if self.df_limits.empty:
-			# Convert to a DataFrame
-			self.df_limits = pd.concat([
-				pd.DataFrame(data=v_limits.keys()),
-				pd.DataFrame(data=v_limits.values())],
-				axis=1)
-			c = constants.Busbars
-			self.df_limits.columns = [c.nominal_lower, c.nominal_upper, c.lower_limit, c.upper_limit]
-
-		# Add limits into busbars voltage DataFrame
-		for i, row in self.df_limits.iterrows():
-			# Add lower limit values
-			df.loc[
-				(df[c.nominal] > row[c.nominal_lower]) &
-				(df[c.nominal] <= row[c.nominal_upper]),
-				c.lower_limit] = row[c.lower_limit]
-			# Add upper limit values
-			df.loc[
-				(df[c.nominal] > row[c.nominal_lower]) &
-				(df[c.nominal] <= row[c.nominal_upper]),
-				c.upper_limit] = row[c.upper_limit]
-		return None
+		self.df = df
 
 
 class InductionData:
@@ -248,14 +239,17 @@ class InductionData:
 
 	def add_to_idev(self, target):
 		"""
-			Function will add impendance data for machines if none exist
+			Function will add impedance data for machines if none exist
 		:param str target: Existing idev file to append machine impedance data to and close
 		:return None:
 		"""
 
 		if self.get_count() > 0:
-			self.logger.error('There are induction machines in the model but the script has not been developed to '
-							  'take these into account')
+			self.logger.error(
+				'There are induction machines in the model but the script has not been developed to '
+				'take these into account'
+			)
+			raise SyntaxError('Incomplete script for induction machines')
 
 		# Append extra 0 to end of line
 		with open(target, 'a') as csv_file:
@@ -290,14 +284,69 @@ class InductionData:
 		return self.count
 
 
+class PlantData:
+	"""
+		Class will contain all of the Machine Data
+	"""
+	def __init__(self, flag=1, sid=-1):
+		"""
+		:param int flag: (optional=2) - Returns all in-service plant buses including those with no in-service machines
+		:param int sid:
+		"""
+		self.sid = sid
+		self.flag = flag
+		self.logger = logging.getLogger(constants.Logging.logger_name)
+
+		self.c = constants.Plant
+
+		self.df = pd.DataFrame()
+		self.update()
+
+	def update(self):
+		"""
+			Update DataFrame with the data necessary for the idev file
+		:return None:
+		"""
+		# Declare functions
+		func_int = psspy.agenbusint
+
+		# Retrieve data from PSSE
+		ierr_int, iarray = func_int(
+			sid=self.sid,
+			flag=self.flag,
+			string=(self.c.bus, self.c.status))
+
+		if sum([ierr_int]) > 0:
+			self.logger.critical(
+				(
+					'Unable to retrieve the plant data from the SAV case and PSSE returned the '
+					'following error code {} from the function <{}>'
+				).format(ierr_int, func_int.__name__)
+			)
+			raise SyntaxError('Error importing data from PSSE SAV case')
+
+		# Combine data into single list of lists
+		data = iarray
+		# Column headers initially in same order as data but then reordered to something more useful for exporting
+		# in case needed
+		initial_columns = [self.c.bus, self.c.status]
+
+		# Transposed so columns in correct location and then columns reordered to something more suitable
+		df = pd.DataFrame(data).transpose()
+		df.columns = initial_columns
+
+		self.df = df
+
+		return None
+
+
 class MachineData:
 	"""
 		Class will contain all of the Machine Data
 	"""
 	def __init__(self, flag=2, sid=-1):
 		"""
-
-		:param int flag:
+		:param int flag: (optional=2) - Returns all in service
 		:param int sid:
 		"""
 		self.sid = sid
@@ -310,12 +359,13 @@ class MachineData:
 
 	def update(self):
 		"""
-			Update dataframe with the data necessary for the idev file
+			Update DataFrame with the data necessary for the idev file
 		:return None:
 		"""
 		# Declare functions
 		func_int = psspy.amachint
 		func_real = psspy.amachreal
+		func_cplx = psspy.amachcplx
 		func_char = psspy.amachchar
 
 		# Retrieve data from PSSE
@@ -326,7 +376,11 @@ class MachineData:
 		ierr_real, rarray = func_real(
 			sid=self.sid,
 			flag=self.flag,
-			string=(self.c.x_subtr, self.c.x_trans, self.c.x_synch))
+			string=(self.c.rpos, self.c.xsubtr, self.c.xtrans, self.c.xsynch))
+		ierr_cplx, xarray = func_cplx(
+			sid=self.sid,
+			flag=self.flag,
+			string=(self.c.zsource,))
 		ierr_char, carray = func_char(
 			sid=self.sid,
 			flag=self.flag,
@@ -342,14 +396,20 @@ class MachineData:
 			raise SyntaxError('Error importing data from PSSE SAV case')
 
 		# Combine data into single list of lists
-		data = iarray + rarray + carray
+		data = iarray + rarray + xarray + carray
 		# Column headers initially in same order as data but then reordered to something more useful for exporting
 		# in case needed
-		initial_columns = [self.c.bus, self.c.x_subtr, self.c.x_trans, self.c.x_synch, self.c.identifier]
+		initial_columns = [
+			self.c.bus, self.c.rpos, self.c.xsubtr, self.c.xtrans, self.c.xsynch, self.c.zsource, self.c.identifier
+		]
 
 		# Transposed so columns in correct location and then columns reordered to something more suitable
 		df = pd.DataFrame(data).transpose()
 		df.columns = initial_columns
+
+		# Split out Z source into R source and X source
+		df[self.c.rsource] = df[self.c.zsource].real
+		df[self.c.xsource] = df[self.c.zsource].imag
 
 		self.df = df
 
@@ -367,9 +427,9 @@ class MachineData:
 
 		df = self.df
 
-		df[self.c.x11] = df[self.c.x_subtr]
-		df[self.c.x1d] = df[self.c.x_trans]
-		df[self.c.xd] = df[self.c.x_synch]
+		df[self.c.x11] = df[self.c.xsubtr]
+		df[self.c.x1d] = df[self.c.xtrans]
+		df[self.c.xd] = df[self.c.xsynch]
 
 		self.logger.debug(
 			(
@@ -383,7 +443,7 @@ class MachineData:
 			)
 		)
 		df[self.c.t1d0] = constants.SHEPD.t1d0
-		df[self.c.t11d0] = constants.SHEPD.t11d0
+		df[self.c.t11d0] = constants.SHEPD.t11q0
 		df[self.c.t1q0] = constants.SHEPD.t1q0
 		df[self.c.t11q0] = constants.SHEPD.t11q0
 		df[self.c.x1q] = df[self.c.x1d]
@@ -398,6 +458,91 @@ class MachineData:
 		# Add in empty 0 to mark the end of the file
 		with open(target, 'a') as csv_file:
 			csv_file.write('0\n')
+
+		return None
+
+	def check_machine_data(self):
+		"""
+			Script runs through all the machines and checks that they all have reasonable R and X data.
+			All those missing R data have it added and a warning message is reported to the user
+		:return None:
+		"""
+		func_seq_mac = psspy.seq_machine_data_3
+		self.update()
+
+		df_missing_rpos = self.df[self.df[self.c.rpos] <= self.c.min_r_pos]
+		# Iterate over each machine and add missing data
+		for idx, machine in df_missing_rpos.iterrows():
+			rpos = machine[self.c.xsubtr] / self.c.assumed_x_r
+			bus = machine[self.c.bus]
+			identifier = machine[self.c.identifier]
+			ierr = func_seq_mac(
+				i=bus,
+				id=identifier,
+				realar1=rpos
+			)
+			if ierr > 0:
+				self.logger.error(
+					(
+						'Unable to change the positive sequence resistance value for the machine connected at '
+						'busbar <{}> with ID: {} to a value of {:.5f}.  Therefore the overall results may not be '
+						'reliable'
+					).format(bus, identifier, rpos)
+				)
+			else:
+				self.logger.warning(
+					(
+						'Machine connected at busbar <{}> with ID: {} has a positive sequence impedance of <= {} '
+						'and has therefore been set to {:.5f} which assumes as X/R of {}'
+					).format(bus, identifier, self.c.min_r_pos, rpos, self.c.assumed_x_r)
+				)
+
+		return None
+
+	def set_rsource_xsource(self, x_type=constants.Machines.xsubtr):
+		"""
+			Function will loop through and set the R source value == rpos and the X source value == input parameter
+		:param str x_type:  (optional) - Source of data to populate Xsource with
+		:return None:
+		"""
+		# Function for changing machine values
+		func_mac_data_change = psspy.machine_chng_2
+		# Make sure have latest machine values
+		self.update()
+
+		# Obtain DataFrame of machines that are Z source impedance data
+		df_missing_zsorce = self.df[
+			(self.df[self.c.rsource] != self.df[self.c.rpos]) |
+			(self.df[self.c.xsource] != self.df[x_type])
+		]
+
+		# Loop through each machine and add missing data
+		for idx, machine in df_missing_zsorce.iterrows():
+			rsource = machine[self.c.rpos]
+			xsource = machine[x_type]
+			bus = machine[self.c.bus]
+			identifier = machine[self.c.identifier]
+			ierr = func_mac_data_change(
+				i=bus,
+				id=identifier,
+				realar8=rsource,
+				realar9=xsource
+			)
+			if ierr > 0:
+				self.logger.error(
+					(
+						'Unable to change the R or X source values for the machine connected at '
+						'busbar <{}> with ID: {} to a values of {:.5f} and {:.5f}.  Therefore the overall results '
+						'may not be reliable'
+					).format(bus, identifier, rsource, xsource)
+				)
+			else:
+				self.logger.info(
+					(
+						'Machine connected at busbar <{}> with ID: {} has had R and X source values changed to '
+						'{:.5f} and {:.5f} based on the values used for {} and {}.'
+					).format(bus, identifier, rsource, xsource, self.c.rpos, x_type)
+				)
 
 		return None
 
@@ -460,6 +605,9 @@ class PsseControl:
 		# Set the PSSE load flow tolerances to ensure all studies done with same parameters
 		self.set_load_flow_tolerances()
 
+		# Set parameters for output values
+		self.set_outputs()
+
 		self.converted = False
 
 		return None
@@ -512,6 +660,40 @@ class PsseControl:
 					'continue anyway.  PSSE returned the error code {} from function <{}>'
 				).format(constants.PSSE.max_iterations, ierr, func.__name__)
 			)
+		return None
+
+	def set_outputs(self):
+		"""
+			Function sets the output parameters to consistent values for subsequent processing
+			Options are set based on the values defined in constants
+		:return None:
+		"""
+
+		func_sc_units = psspy.short_circuit_units
+		ierr_sc_units = func_sc_units(ival=constants.PSSE.def_short_circuit_units)
+
+		func_sc_coordinates = psspy.short_circuit_coordinates
+		ierr_sc_coordinates = func_sc_coordinates(ival=constants.PSSE.def_short_circuit_coordinates)
+
+		# Set the maximum number of lines for the printing output
+		func_lines = psspy.lines_per_page_one_device
+		ierr_lines = func_lines(1, 100000)
+
+		if sum([ierr_sc_units, ierr_sc_coordinates, ierr_lines]) > 0:
+			self.logger.critical(
+				(
+					'Unable to change short circuit units to physical (ival={}) with function <{}> returned the '
+					'error code {} or short circuit coordinates to polar (ival={}) with function <{}> which returned '
+					'the error code {}.  The function <{}> to increase the number of lines on the page '
+					'returned the error code {}'
+				).format(
+					constants.PSSE.def_short_circuit_units, func_sc_units.__name__, ierr_sc_units,
+					constants.PSSE.def_short_circuit_coordinates, func_sc_coordinates.__name__,
+					ierr_sc_coordinates,
+					func_lines.__name__, ierr_lines
+				)
+			)
+
 		return None
 
 	def run_load_flow(self, flat_start=False, lock_taps=False):
@@ -611,31 +793,30 @@ class PsseControl:
 			self.convert_gen()
 			self.convert_load()
 			self.converted = True
+
+			# Generators will now be ordered
+			func_ordr = psspy.ordr
+			ierr = func_ordr(opt=0)
+			if ierr > 0:
+				self.logger.critical(
+					(
+						'Error ordering the busbars into a sparsity matrix using function <{}> which returned '
+						'error code {}'
+					).format(func_ordr.__name__, ierr)
+				)
+
+			# Factorize admittance matrix
+			func_fact = psspy.fact
+			ierr = func_fact()
+			if ierr > 0:
+				self.logger.critical(
+					(
+						'Error when trying to factorize admittance matrix using function <{}> which returned error code {}'
+					).format(func_fact.__name__, ierr)
+				)
+
 		else:
 			self.logger.debug('Attempted call to convert generation and load but are already converted')
-
-		# Generators will now be ordered
-		func_ordr = psspy.ordr
-		ierr = func_ordr(opt=0)
-		if ierr > 0:
-			self.logger.critical(
-				(
-					'Error ordering the busbars into a sparsity matrix using function <{}> which returned '
-					'error code {}'
-				).format(func_ordr.__name__, ierr)
-			)
-
-		# Factorize admittance matrix
-		func_fact = psspy.fact
-		ierr = func_fact()
-		if ierr > 0:
-			self.logger.critical(
-				(
-					'Error when trying to factorize admittance matrix using function <{}> which returned error code {}'
-				).format(func_fact.__name__, ierr)
-			)
-
-		# TODO: TYSL - Do not believe this is required
 
 		return None
 
@@ -650,7 +831,7 @@ class PsseControl:
 		# 1 = Uses X'' for conventional machines
 		# 2 = Uses X' for conventional machines
 		# 3 = Uses X for conventional machines
-		x_type = 0
+		x_type = constants.Machines.bkdy_machine_type
 
 		# Check that no induction machines exist since otherwise assumptions above are not applicable
 		if InductionData().get_count() > 0:
@@ -700,13 +881,13 @@ class PsseControl:
 		# Whether loads connected to some busbars should be skipped
 		status2 = 0  # If set to 1 then only type 1 buses, if set to 2 then type 2 and 3 buses
 
-		# TODO: Sensitivty check to determine if these need to be available as an input
+		# TODO: Sensitivity check to determine if these need to be available as an input
 		# Constants used to define the way that loads are treated in the conversion
 		# Loads converted to constant admittance in active and reactive power
 		loadin1 = 0.0
-		loadin2 = 1.0
+		loadin2 = 100.0
 		loadin3 = 0.0
-		loadin4 = 1.0
+		loadin4 = 100.0
 
 		func_conl = psspy.conl
 		# Multiple runs of the function are necessary to convert the loads
@@ -780,6 +961,69 @@ class PsseControl:
 
 		return None
 
+	def define_bus_subsystem(self, buses, sid=constants.PSSE.sid):
+		"""
+			Function to define the bus subsystem that will then be used for returning fault current data
+		:param int sid: (optional=1)
+		:param list buses: List of busbar numbers to be added to the subsystem for fault analysis
+		:return int sid:  Subsystem identified number
+		"""
+		# PSSE functions
+		func_subsys_init = psspy.bsysinit
+		func_subsys = psspy.bsys
+
+		num_buses = len(buses)
+		# Check number of busbars is enough otherwise just define as entire subsystem
+		if num_buses == 0:
+			self.sid = -1
+			self.logger.warning(
+				(
+					'No busbars provided as an input and therefore no bus subsystem to define,'
+					'sid = {}'
+				).format(self.sid)
+			)
+			return self.sid
+
+		# Initialise desired bus subsystem
+		ierr_init = func_subsys_init(sid=sid)
+		if ierr_init == 1:
+			msg0 = (
+				(
+					'Attempted to use PSSE sid of {} which is outside of the allowable limits of {} to {} and so the '
+					'function <{}> returned an error code of {}.'
+				).format(sid, 0, 11, func_subsys_init.__name__, ierr_init)
+			)
+
+			# Try with a different sid value
+			sid = constants.PSSE.sid
+			ierr = func_subsys_init(sid=sid)
+			if ierr == 0:
+				msg1 = 'Instead an sid value of {} has been used'.format(sid)
+				self.logger.warning('{}\n{}'.format(msg0, msg1))
+			else:
+				msg1 = (
+					'However even using an sid value of {} as defined in <constants.PSSE> has not resolved the '
+					'issue'
+				).format(sid)
+				self.logger.critical('{}\n{}'.format(msg0, msg1))
+				raise ValueError('Not possible to define subsystem')
+
+		# Define subsystem based on this initialised sid code
+		ierr = func_subsys(sid=sid, usekv=0, numbus=num_buses, busnum=buses)
+		if ierr == 0:
+			self.logger.debug('Bus subsystem defined with sid = {}'.format(sid))
+		else:
+			self.logger.critical(
+				(
+					'Error occurred trying to define bus subsystem.  The function <{}> returned the error code {}'
+				).format(func_subsys.__name__, ierr)
+			)
+			raise ValueError('Unable to create bus subsystem')
+
+		self.sid = sid
+
+		return sid
+
 
 class BkdyFaultStudy:
 	"""
@@ -787,8 +1031,9 @@ class BkdyFaultStudy:
 	"""
 	def __init__(self, psse_control):
 		"""
-			Function deals with the processing of all the routines necessary to calculate the fault currents using the BKDY method
-		:param PsseControl psse_control:
+			Function deals with the processing of all the routines necessary to calculate the fault currents using
+			the BKDY method
+		:param PsseControl psse_control:  Handle to PSSE for running of studies
 		"""
 		self.psse = psse_control
 		# Subsystem used for selecting all the busbars
@@ -796,18 +1041,83 @@ class BkdyFaultStudy:
 
 		self.logger = logging.getLogger(constants.Logging.logger_name)
 		self.breaker_duty_file = str()
+		# Dictionary created to relate output names to files
+		self.bkdy_files = dict()
+		# DataFrame with the combined results for the BKDY method
+		self.df_combined_results = pd.DataFrame()
+
+		# Check that the MVA values match with the expected value used in the constants
+		self.check_mva_value()
+
+	def check_mva_value(self):
+		"""
+			Function retrieves the MVA value from PSSe and then checks that the value matches
+			with the expected value from the constants
+			If it does not then displays an error message
+		:return None:
+		"""
+		sysmva = psspy.sysmva()
+		if sysmva != constants.BkdyFileOutput.base_mva:
+			self.logger.error(
+				(
+					'The base MVA value of the selected SAV case is {:.1f} but results are expected to '
+					'be expressed on {:.1f} MVA base'
+				).format(sysmva, constants.BkdyFileOutput.base_mva)
+			)
+
+		return None
 
 	def create_breaker_duty_file(self, target_path):
+		"""
+			Creates the create breaker duty files
+		:param str target_path: Target path to save the file to
+		:return None:
+		"""
 		self.breaker_duty_file = target_path
 
+		# Check machine data
 		mac_data = MachineData()
+		# Check machine data has suitable positive sequence impedance data
+		mac_data.check_machine_data()
+		if constants.Machines.bkdy_machine_type == 0:
+			# Only need to set rsource and xsource values if machine type == 0
+			mac_data.set_rsource_xsource()
 		mac_data.produce_idev(target=target_path)
+
 		induction_machines = InductionData()
 		induction_machines.add_to_idev(target=target_path)
 
-	def main(self):
+		return None
+
+	def change_report_output(self, destination, output_file=str()):
+		"""
+			Function disables the reporting output from PSSE
+		:param int destination:  Target destination, default is to disable which sets it to 6
+		:param str output_file:  Target file to save the output to
+		:return None:
+		"""
+
+		# Sets PSSE report output to a file rather than general
+		func = psspy.report_output
+		ierr_report = psspy.report_output(islct=destination, filarg=output_file, options1=0)
+
+		if ierr_report > 0:
+			self.logger.critical(
+				(
+					'Unable to change the report output of psse to the destination: {} using the function <{}> '
+					'with the parameters islct={}.  The function returned the following error code: {}'
+				).format(output_file, func.__name__, destination, ierr_report)
+			)
+
+		return None
+
+	def main(self, name, output_file, fault_time):
 		"""
 			Main calculation processes
+		:param str name: Name to give this result, when combining results this will be used to determine which results
+						to extract based on the data included in constants.SHEPD.result
+		:param str output_file:  File to store bkdy output into
+		:param float fault_time:  Time to use for beaker contact separation
 		:return:
 		"""
 		# TODO: Define bus subsystem to only return faults for particular buses
@@ -818,19 +1128,573 @@ class BkdyFaultStudy:
 
 		func_bkdy = psspy.bkdy
 		# TODO: ALL needs to be defined with an input once the bus subsystem has been defined
-		# TODO Fault time to be defined
+
+		# Change destination to file type object
+		self.change_report_output(destination=constants.PSSE.file_output, output_file=output_file)
+
 		ierr = func_bkdy(
 			sid=self.sid,
 			all=1,
 			apiopt=1,
 			lvlbak=-1,
-			flttim=constants.fault_time,
+			flttim=fault_time,
 			bfile=self.breaker_duty_file)
+
+		self.change_report_output(destination=constants.PSSE.output[constants.DEBUG_MODE])
 
 		if ierr > 0:
 			self.logger.critical(
 				(
-					'Error occured trying to calculate BKDY which returned the following error code {} from the function '
+					'Error occurred trying to calculate BKDY which returned the following error code {} from the function '
 					'<{}>'
 				).format(ierr, func_bkdy.__name__)
 			)
+
+		# Associate this file with the BkdyFile class
+		self.bkdy_files[name] = BkdyFile(output_file=output_file, fault_time=fault_time)
+
+	def combine_bkdy_output(self, delete=True):
+		"""
+			Combines output from bkdy files.
+			The particular results that are exported are based on the values detailed in constants.SHEPD.results which
+			relate to the name of each result file.  If they cannot be found then all results are exported with the
+			particular name appended to each of the headings.
+		:param bool delete: (optional=True) - Will delete the original bkdy output files
+		:return pd.DataFrame() self.df_combined_results:  DataFrame of the combined results ready for excel export
+		"""
+		# Empty list that will be populated with DataFrames as they are processed
+		dfs = list()
+		# Loops through each of the results and processes the files
+		for name, bkdy_file in self.bkdy_files.iteritems():
+			self.logger.debug(
+				'Processing the BKDY results for fault named: {} and stored in: {}'.format(name, bkdy_file)
+			)
+
+			# Extract all data from file and delete file since no longer needed
+			df_temp = bkdy_file.process_bkdy_output(delete=delete)
+
+			# Retain the relevant file for this particular named fault
+			c = constants.SHEPD
+			try:
+				cols_to_keep = c.results_per_fault[name]
+			except KeyError:
+				# If name of fault does not exist then retain all the column headers and adjust to include name
+				self.logger.warning(
+					(
+						'The fault named: {} has not been defined in the constants <{}> and therefore it is not '
+						'possible identify the specific results that should be exported.  Instead all results will be '
+						'exported with _{} added to the end of the result'
+					).format(name, c, name)
+				)
+				cols_to_keep = ['{}_{}'.format(x, name) for x in df_temp.columns]
+
+			# Extract relevant columns for this DataFrame
+			df = df_temp[cols_to_keep]
+			dfs.append(df)
+
+		# Combine results into a single DataFrame
+		self.df_combined_results = pd.concat(dfs, axis=1)
+
+		return self.df_combined_results
+
+
+# TODO: To be completed
+class FormatResults:
+	"""
+		Convert the results into the specified format
+	"""
+	def __init__(self, psse, df, output_type='LTDS'):
+		"""
+		:param PsseControl psse:
+		:param pd.DataFrame df:
+		"""
+		self.logger = logging.getLogger(constants.Logging.logger_name)
+
+		self.psse = psse
+		self.df = df
+		self.output_type = output_type
+
+		if output_type == 'LTDS':
+			self.format_for_ltds()
+
+	def format_for_ltds(self):
+		"""
+			Convert base df into format necessary for LTDS
+		:return:
+		"""
+		self.logger.critical('Code not developed for LTDS format yet')
+		return None
+		# #bus_data = BusData()
+		# #df_ltds = self.df
+		# #pass
+		# #df_ltds[bus_name] = None
+
+
+class LoadData:
+	"""
+		Class that obtains all the data for the loads in the PSSE model
+	"""
+
+	def __init__(self, flag=1, sid=-1):
+		"""
+		:param int flag:  (optional=1) - Only returns details for loads at in-service busbars
+		:param int sid:
+		"""
+		self.sid = sid
+		self.flag = flag
+		self.logger = logging.getLogger(constants.Logging.logger_name)
+
+		self.c = constants.Loads
+
+		self.df = pd.DataFrame()
+
+		# Populate DataFrame
+		self.update()
+
+	def update(self):
+		"""
+			Update DataFrame with the data necessary for the idev file
+		:return None:
+		"""
+		# Declare functions
+		func_int = psspy.aloadint
+		func_real = psspy.aloadreal
+		func_char = psspy.aloadchar
+
+		# Retrieve data from PSSE
+		ierr_int, iarray = func_int(
+			sid=self.sid,
+			flag=self.flag,
+			string=(self.c.bus,))
+		ierr_real, rarray = func_real(
+			sid=self.sid,
+			flag=self.flag,
+			string=(self.c.load,))
+		ierr_char, carray = func_char(
+			sid=self.sid,
+			flag=self.flag,
+			string=(self.c.identifier,))
+
+		if ierr_int > 0 or ierr_char > 0 or ierr_real > 0:
+			self.logger.critical(
+				(
+					'Unable to retrieve the load data from the SAV case and PSSE returned the '
+					'following error codes {}, {} and {} from the functions <{}>, <{}> and <{}>'
+				).format(ierr_int, ierr_real, ierr_char, func_int.__name__, func_real.__name__, func_char.__name__)
+			)
+			raise SyntaxError('Error importing data from PSSE SAV case')
+
+		# Combine data into single list of lists
+		data = iarray + rarray + carray
+		# Column headers initially in same order as data but then reordered to something more useful for exporting
+		initial_columns = [self.c.bus, self.c.load, self.c.identifier]
+
+		# Transposed so columns in correct location and then columns reordered to something more suitable
+		df = pd.DataFrame(data).transpose()
+		df.columns = initial_columns
+
+		self.df = df
+
+		return None
+
+	def summary(self):
+		"""
+			Produces a summary of the total load connected by busbar
+		:return pd.DataFrame df_summary:
+		"""
+		# Extract the total load connected at each busbar and resulting index will be based on the busbar number
+		df_summary = self.df.loc[:, (self.c.bus, self.c.load)].groupby(by=self.c.bus).sum(axis=1)
+		# Adjust to only include data for those loads that are greater than zero
+		df_summary = df_summary[df_summary[self.c.load] > constants.G74.min_load_mva]
+
+		return df_summary
+
+
+# TODO: Process output results to extract relevant values (input option to select values?)
+
+
+class BkdyFile:
+	def __init__(self, output_file, fault_time):
+		"""
+		:param str output_file:  Full path to output file that was produced by BKDY routine
+		:param float fault_time:  Time of breaker separation for this study
+		"""
+		self.logger = logging.getLogger(constants.Logging.logger_name)
+		# Define constants and initialise DataFrame
+		self.output_file = output_file
+		self.fault_time = fault_time
+
+		# Will contain processed results
+		self.df = pd.DataFrame()
+
+	def process_bkdy_output(self, delete=False):
+		"""
+			Reads in the bkdy file and processes into a suitable DataFrame format
+		:param bool delete:  (optional=False) - If set to True then will delete the file
+		:return pd.DataFrame df:  DataFrame of all results in the file with column labels as listed in
+								constants.BkdyFileOutput
+		"""
+		# Check if file has already been deleted and if so return previously imported and processed results
+		if self.output_file is None:
+			self.logger.error(
+				(
+					'Attempted to process a BKDY output file for fault time {:.2f} that has already file that has '
+					'already been deleted.  Instead the previously imported and processed results will be returned.'
+				).format(self.fault_time)
+			)
+			# Check if DataFrame is already empty which would be due to an issue in processing of the files
+			if self.df.empty:
+				self.logger.critical(
+					'Something has gone wrong, attempted to process a file which has already '
+					'been deleted but has not previously been processed.  Scripting error!'
+				)
+				raise SyntaxError('BKDY output file already deleted or empty')
+			else:
+				return self.df
+		regex_bus = re.compile('[0-9]+')
+		bus = int()
+		start_reached = False
+		c_bkdy_file = constants.BkdyFileOutput()
+		with open(self.output_file, 'rb') as f:
+			for line in f:
+				# Find start of file
+				if not start_reached and constants.BkdyFileOutput.start not in line:
+					continue
+				elif constants.BkdyFileOutput.start in line:
+					start_reached = True
+					continue
+
+				# Find busbar number
+				bus_line = regex_bus.search(line)
+				if bus_line and not bus:
+					bus = int(bus_line.group())
+				elif constants.BkdyFileOutput.current in line:
+					# Get relevant column numbers for this line
+					col_nums, expected_length = c_bkdy_file.col_positions(line_type=c_bkdy_file.current)
+					# Split the line into a list of floats
+					currents = extract_values(line, expected_length)
+
+					# Process results into DataFrame
+					for name, col_num in col_nums.iteritems():
+						self.df.loc[bus, name] = currents[col_num] / c_bkdy_file.num_to_kA
+
+				elif constants.BkdyFileOutput.impedance in line:
+					# TODO: Confirm base value of model to ensure values are presented on 100 MVA base
+					# Get relevant column numbers for this line
+					col_nums, expected_length = c_bkdy_file.col_positions(line_type=c_bkdy_file.impedance)
+					# Split the line into a list of floats
+					impedance = extract_values(line, expected_length=expected_length)
+
+					# Process results into DataFrame
+					for name, col_num in col_nums.iteritems():
+						self.df.loc[bus, name] = impedance[col_num]
+
+					# Reset bus since finished processing this busbar
+					bus = int()
+
+		# Set name for DataFrame
+		self.df.name = constants.BkdyFileOutput.start
+
+		# Tidy up by removing file and updating status
+		if delete:
+			os.remove(self.output_file)
+			self.output_file = None
+
+		return self.df
+
+
+class G74FaultInfeed:
+	"""
+		Class contains functions necessary for adding the equivalent fault in feeds to PSSE for asynchronous machines
+		embedded as part of the load (LV and HV).  These machines are added inline with the G74 requirements.
+	"""
+	def __init__(self):
+		"""
+		"""
+		self.logger = logging.getLogger(constants.Logging.logger_name)
+		self.c = constants.G74
+		# #self.df_hv_machines = hv_machines
+
+		# Will contain details of all the loads in the model so that machines can be added
+		self.df_load_buses = pd.DataFrame()
+		# Will contain details of all the machines that need to be added
+		self.df_machines = pd.DataFrame()
+		# DataFrame will contain all the busbar data
+		self.bus_data = pd.DataFrame()
+		self.plant_data = pd.DataFrame()
+
+		# Parameter set to True once machines have been added and checked
+		self.machines_checked = False
+
+	def identify_machine_parameters(self, hv_machines=pd.DataFrame()):
+		"""
+			Obtains details of all the loads in the system at each busbar along with the nominal voltage
+		:param pd.DataFrame hv_machines:  DataFrame of any HV connected machines provided as an input, machines will be
+									added at these busbars based on the HV parameters
+
+		:return None:
+		"""
+		# Get load data and busbar data
+		self.df_machines = LoadData().summary()
+		self.bus_data = BusData()
+		self.plant_data = PlantData()
+
+		# Create DataFrame with details of machines that need to be added
+		# Obtain nominal voltage from the busbar data
+		self.df_machines[constants.Busbars.nominal] = self.bus_data.df[constants.Busbars.nominal]
+
+		# Set flags for HV and LV machines accordingly (assume all lv to start with)
+		self.df_machines[self.c.label_voltage] = self.c.lv
+		self.df_machines[self.c.label_mva] = self.c.mva_11
+
+		# If any HV machines have been added then parameters for these machines will also be added to the
+		# output data and these will be based on the HV machine values
+		# TODO: Reconsider approach here, values overwritten in calculate_machine_mva_values.  Though it may still be
+		# TODO: useful to have an input available that can override the assumed parameters.
+		if not hv_machines.empty:
+			# TODO: Add in error checking for the case where HV machines are listed but there is no equivalent load
+			hv_machines[self.c.label_voltage] = self.c.hv
+			hv_machines[self.c.label_mva] = self.c.mva_hv
+			self.df_machines[self.c.label_voltage].update(hv_machines[self.c.label_voltage])
+			self.df_machines[self.c.label_mva].update(hv_machines[self.c.label_mva])
+
+			# Check for any HV machines that are not in the DataFrame and report an error
+			missing_hv_loads = hv_machines.loc[~hv_machines.index.isin(self.df_machines.index)]
+			if not missing_hv_loads.empty:
+				msg0 = (
+					'The following HV connected loads have been listed as an input but no load is modelled in the PSSE '
+					'case.  Therefore no equivalent infeed has been added for these:'
+				)
+				msg1 = '\n'.join([
+					'\t - HV connected load at busbar {} has no equivalent load in PSSE case'.format(bus)
+					for bus in missing_hv_loads.index
+				])
+				self.logger.warning('{}\n{}'.format(msg0, msg1))
+
+		# Convert MVA values to be the values based on the load values
+		# TODO: This no longer does anything since overwritten in calculate_machine_mva_values
+		self.df_machines[self.c.label_mva] = self.df_machines[self.c.label_mva] * self.df_machines[constants.Loads.load]
+
+		return None
+
+	def calculate_machine_mva_values(self):
+		"""
+			Calculates the relevant values for the machines taking into consideration nominal voltage and transformer
+			impedance data.  The X'', X' and X values are calculated based on the
+		:return None:
+		"""
+
+		# Check if any loads modelled at > 33kV and display an error message
+		df_above_33 = self.df_machines[self.df_machines[constants.Busbars.nominal] > 33.0]
+		if not df_above_33.empty:
+			msg0 = (
+				'The following loads are modelled at greater than 33 kV and the ENA G74 guidance does not cover '
+				'these.  They have been assumed to be modelled with the same parameters as applied for 33 kV '
+				'equivalent fault infeed:'
+			)
+			msg1 = '\n'.join([
+				'\t {:.2f} MVA load connected at busbar <{}> with nominal voltage {:.1f} kV'
+				.format(mac[constants.Loads.load], bus, mac[constants.Busbars.nominal])
+				for bus, mac in df_above_33.iterrows()]
+			)
+			self.logger.warning('{}\n{}'.format(msg0, msg1))
+
+		# 33kV equivalent load parameters are as per ENA G74 technical data
+		# Series created to allow easy adding to DataFrame
+		# TODO: Efficiency improvement possible here since could just filter rows and assign in place
+		df_33 = self.df_machines.loc[self.df_machines[constants.Busbars.nominal] > 11.0].assign(**self.c.parameters_33)
+		df_11 = self.df_machines.loc[self.df_machines[constants.Busbars.nominal] <= 11.0].assign(**self.c.parameters_33)
+
+		# Calculate MVA values for machine taking into consideration SHETL parameters
+		df_33[self.c.label_mva] = self.c.mva_33 * df_33[constants.Loads.load]
+		df_11[self.c.label_mva] = self.c.mva_11 * df_11[constants.Loads.load]
+
+		# Combine back into a single data_frame
+		self.df_machines = pd.concat([df_33, df_11], axis=0)
+
+		self.logger.debug('Parameters calculated for machines connecting to represent embedded load at 11 and 33kV')
+
+	def calculate_machine_impedance(self, fault_time):
+		"""
+			Calculates and updates the machine impedance values based on the fault time
+		:param float fault_time: (optional=0.0) - X'', X' and X parameters based on the fault time input in seconds
+		:return None:
+		"""
+		# Calculate X'', X' and X values based on fault_time (based on equation 9.5.2 of G74 1992
+		x_value = 1.0 / ((1.0 / self.c.x11) * math.exp(-fault_time / self.c.t11))
+
+		# Update DataFrame with these values
+		c = constants.Machines
+		self.df_machines.loc[:, (
+									c.xsubtr,
+									c.xtrans,
+									c.xsynch,
+									c.xsource,
+									c.xneg
+								)] = x_value
+
+		self.logger.debug(
+			(
+				"G74 machine values updated for a fault time of {:.2f} seconds based on an x'' of {:.3f} p.u., "
+				"time constant of {:.2f} seconds.  Resulting in x at time of fault of {:.3f} p.u."
+			).format(fault_time, self.c.x11, self.c.t11, x_value))
+
+	def add_machines(self):
+		"""
+			Adds / updates the parameters for every machine in the PSSE base case to ensure the G74 contribution
+			is included.  Will also change the state of busbars to generator buses where appropriate.
+		:return None:
+		"""
+		func_machine = psspy.machine_data_2
+		func_machine_seq = psspy.seq_machine_data_3
+		func_bus = psspy.bus_data_3
+		func_plant = psspy.plant_data
+
+		# Loop through every machine and add / update parameters in the PSSE case
+		for bus, machine in self.df_machines.iterrows():
+			# Check busbar state is the correct type (type codes 2, 3 or 4 do not impact)
+			# Must be done before adding machine otherwise get a missing Plant Data error
+			if self.bus_data.df.loc[bus, constants.Busbars.state] == 1:
+				# If busbar is type code 1 (non-generator bus) then change status to 2
+				ierr_bus = func_bus(
+					i=bus,
+					intgar1=constants.Busbars.generator_bus_type_code
+				)
+			else:
+				ierr_bus = 0
+
+			# Check if plant already exists and if not add Plant
+			if bus not in self.plant_data.df.loc[:, constants.Plant.bus].tolist():
+				ierr_plant = func_plant(
+					i=bus
+				)
+			else:
+				ierr_plant = 0
+
+			# Add machine / update MVA values
+			# TODO: label_mva is not recognised and so is returning 0 (need to check where this should be populated from)
+			ierr_mac = func_machine(
+				i=bus,
+				id=self.c.machine_id,
+				intgar1=1,			# Ensures machine is in service
+				realar1=0.0,		# Ensures machine P output is 0.0 (PG)
+				realar2=0.0,		# Ensures machine Q output is 0.0 (QG)
+				realar3=0.0,		# Ensures machine Q output is 0.0 (QT)
+				realar4=0.0,		# Ensures machine Q output is 0.0 (QB)
+				realar5=0.0,		# Ensures machine P output is 0.0 (PT)
+				realar6=0.0,		# Ensures machine P output is 0.0 (PB)
+				realar7=machine[self.c.label_mva],
+			)
+
+			# Update machine sequence values
+			ierr_seq = func_machine_seq(
+				i=bus,
+				id=self.c.machine_id,
+				realar1=machine[constants.Machines.rpos],
+				realar2=machine[constants.Machines.xsubtr],
+				realar3=machine[constants.Machines.rneg],
+				realar4=machine[constants.Machines.xneg],
+				realar5=machine[constants.Machines.rzero],
+				realar6=machine[constants.Machines.xzero],
+				realar7=machine[constants.Machines.xtrans],
+				realar8=machine[constants.Machines.xsynch]
+			)
+
+			# Error checking / debug writing
+			if sum([ierr_mac, ierr_seq, ierr_bus, ierr_plant]) > 0:
+				self.logger.error(
+					(
+						'An error occurred when trying to add an equivalent machine to represent the fault current '
+						'contribution from embedded load to the busbar {}.  The functions <{}>, <{}>, <{}> and <{}> '
+						'returned the following error codes: {}, {}, {} and {}'
+					).format(
+						bus,
+						func_bus.__name__, func_plant, func_machine.__name__, func_machine_seq.__name__,
+						ierr_bus, ierr_plant, ierr_mac, ierr_seq
+					)
+				)
+			else:
+				self.logger.debug(
+					'Machine parameters successfully updated for equivalent machine connected to busbar: {} with ID {}'
+					.format(bus, constants.G74.machine_id)
+				)
+
+
+class IecFaults:
+	"""
+		Class for carrying out IEC fault current calculations and returning the required data
+	"""
+	# TODO:  Need to implement an initial stage to determine the DC component and the peak component
+	def __init__(self, psse, buses=list()):
+		"""
+			List of busbars to consider for IEC fault current calculations
+		:param PsseControl psse:  Controller for psse
+		:param list buses: (optional=list)
+		"""
+		self.logger = logging.getLogger(constants.Logging.logger_name)
+
+		# Check if bus subsystem needs defining
+		if len(buses) == 0:
+			psse.sid = -1
+		else:
+			psse.define_bus_subsystem(buses=buses)
+
+		self.buses = buses
+		self.sid = psse.sid
+
+		# Set fault units and coordinates to the correct formats
+		psse.set_outputs()
+
+	def fault_3ph_all_buses(self, fault_time):
+		"""
+			Calculate three phase fault using IEC methodology
+		:param float fault_time:  Breaker opening time
+		:return pd.DataFrame df:
+		"""
+		# PSSE functions
+		func_iecs = pssarrays.iecs_currents
+
+		# Get latest busbar data
+		bus_data = BusData()
+		# If looking at all busbars then produce list of buses based on all busbars
+		if self.sid == -1:
+			buses_to_fault = bus_data.df[bus_data.c.bus].tolist()
+		else:
+			buses_to_fault = self.buses
+
+		# Constant definition for all output data
+		c = constants.BkdyFileOutput
+		df = pd.DataFrame()
+
+		# Loop through each busbar and perform fault current calculation
+		for bus in buses_to_fault:
+			# Get the pre-fault voltage for this busbar
+			pre_fault_v = bus_data.df.loc[bus, bus_data.c.voltage]
+			# TODO: Need to confirm parameters for IEC fault current calculation
+			iec_results = func_iecs(
+				sid=self.sid,
+				flt3ph=1,
+				fltloc=0,
+				optnftrc=2,
+				brktime=fault_time,
+				vfactorc=pre_fault_v
+			)
+			if iec_results.ierr > 0:
+				self.logger.critical(
+					(
+						'Error running a fault current calculation on busbar {} with pre fault voltage of {:.2f} and '
+						'circuit breaker opening time of {:.2f} seconds.  The function <{}> returned the error code {} '
+					).format(bus, pre_fault_v, fault_time, func_iecs.__name__, iec_results.ierr)
+				)
+				raise ValueError('Error running IEC fault current')
+			else:
+
+				bus_idx = iec_results.fltbus.index(bus)
+				df.loc[bus, c.ik11] = abs(iec_results.flt3ph[bus_idx].ia1)/c.num_to_kA
+				df.loc[bus, c.ip] = abs(iec_results.flt3ph[bus_idx].ipc)/c.num_to_kA
+				df.loc[bus, c.idc] = abs(iec_results.flt3ph[bus_idx].idc)/c.num_to_kA
+				df.loc[bus, c.ibsym] = abs(iec_results.flt3ph[bus_idx].ibsym)/c.num_to_kA
+				df.loc[bus, c.ibasym] = abs(iec_results.flt3ph[bus_idx].ibuns)/c.num_to_kA
+
+		# Return the DataFrame of the results for 3 phase faults
+		return df

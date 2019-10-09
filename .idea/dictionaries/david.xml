@@ -1,17 +1,50 @@
 <component name="ProjectDictionaryState">
   <dictionary name="david">
     <words>
+      <w>apiopt</w>
       <w>bkdy</w>
       <w>carray</w>
       <w>colnum</w>
       <w>colstring</w>
+      <w>conl</w>
+      <w>cplx</w>
       <w>exname</w>
       <w>fromnumber</w>
+      <w>ibasym</w>
+      <w>ibsym</w>
       <w>idev</w>
+      <w>iecs</w>
+      <w>infeed</w>
+      <w>islct</w>
+      <w>ival</w>
+      <w>loadin</w>
+      <w>ltds</w>
+      <w>mvaact</w>
+      <w>ordr</w>
+      <w>prefault</w>
       <w>pssarrays</w>
       <w>raphson</w>
+      <w>reactance</w>
+      <w>rneg</w>
+      <w>rpos</w>
+      <w>rsource</w>
+      <w>rzero</w>
       <w>shepd</w>
+      <w>shetl</w>
+      <w>subsys</w>
+      <w>sysmva</w>
+      <w>thevenin</w>
       <w>tonumber</w>
+      <w>unittesting</w>
+      <w>xarray</w>
+      <w>xneg</w>
+      <w>xsource</w>
+      <w>xsubtr</w>
+      <w>xsynch</w>
+      <w>xtrans</w>
+      <w>xzero</w>
+      <w>zsorce</w>
+      <w>zsource</w>
     </words>
   </dictionary>
 </component>

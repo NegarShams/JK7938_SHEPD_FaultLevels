@@ -12,18 +12,21 @@
 import unittest
 import os
 import sys
+import pandas as pd
+import math
 import g74
 import g74.psse as test_module
+import g74.constants as constants
 
 TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
 TEST_LOGS = os.path.join(TESTS_DIR, 'logs')
 
 SAV_CASE_COMPLETE = os.path.join(TESTS_DIR, 'JK7938_SAV_TEST.sav')
+SAV_CASE_COMPLETE2 = os.path.join(TESTS_DIR, 'JK7938_SAV_TEST2.sav')
 
 two_up = os.path.abspath(os.path.join(TESTS_DIR, '../..'))
 sys.path.append(two_up)
 
-SKIP_SLOW_TESTS = False
 DELETE_LOG_FILES = True
 
 # These constants are used to return the environment back to its original format
@@ -33,7 +36,6 @@ original_environ = os.environ['PATH']
 
 
 # ----- UNIT TESTS -----
-@unittest.skipIf(SKIP_SLOW_TESTS, 'PSSPY import testing skipped since slow to run')
 class TestPsseInitialise(unittest.TestCase):
 	"""
 		Functions to check that PSSE import and initialisation is possible
@@ -78,11 +80,13 @@ class TestPsseInitialise(unittest.TestCase):
 		os.environ['PATH'] = os.environ['PATH'].strip(self.psse.psse_py_path)
 
 
-@unittest.skipIf(SKIP_SLOW_TESTS, 'PSSE initialisation skipped since slow to run')
 class TestPsseControl(unittest.TestCase):
 	"""
 		Unit test for loading of SAV case file and subsequent operations
 	"""
+	# To avoid error message
+	logger = None
+
 	@classmethod
 	def setUpClass(cls):
 		"""
@@ -113,6 +117,85 @@ class TestPsseControl(unittest.TestCase):
 		self.assertTrue(load_flow_success)
 		self.assertTrue(df.empty)
 
+	def test_bus_subsystem(self):
+		""" Tests the bus subsystem can be defined """
+		sid = self.psse.define_bus_subsystem(buses=[11, 33], sid=2)
+		self.assertEqual(sid, self.psse.sid)
+		self.psse.sid = -1
+
+	def test_bus_subsystem_fails(self):
+		""" Tests the bus subsystem can be defined """
+		constants.PSSE.sid = 20
+		self.assertRaises(ValueError, self.psse.define_bus_subsystem, [11, 33], 25)
+		self.assertEqual(-1, self.psse.sid)
+		constants.PSSE.sid = 1
+
+	def test_bus_subsystem_fails2(self):
+		""" Tests the bus subsystem defines based on the constants value """
+		sid = self.psse.define_bus_subsystem(buses=[11, 33], sid=25)
+		self.assertEqual(constants.PSSE.sid, sid)
+		self.psse.sid = -1
+
+	def test_bus_subsystem_no_buses(self):
+		sid = self.psse.define_bus_subsystem(buses=[], sid=2)
+		self.assertEqual(-1, sid)
+
+	@classmethod
+	def tearDownClass(cls):
+		# Delete log files created by logger
+		if DELETE_LOG_FILES:
+			paths = [
+				cls.logger.pth_debug_log,
+				cls.logger.pth_progress_log,
+				cls.logger.pth_error_log
+			]
+			del cls.logger
+			for pth in paths:
+				if os.path.exists(pth):
+					os.remove(pth)
+
+
+class TestBkdyNonPSSEComponents(unittest.TestCase):
+	"""
+		Unit test for individual components required for BKDY calculation that do not need PSSE
+	"""
+	# Reference added here to avoid issue with referencing in tearDownClass method
+	logger = None
+
+	@classmethod
+	def setUpClass(cls):
+		"""
+			Load the SAV case into PSSE for further testing
+		"""
+		# Initialise logger
+		cls.logger = g74.Logger(pth_logs=TEST_LOGS, uid='TestBkdyComponents', debug=g74.constants.DEBUG_MODE)
+		# #cls.bkdy = test_module.BkdyFaultStudy()
+		cls.output_file = os.path.join(TESTS_DIR, 'bkdy_output{}'.format(constants.General.ext_csv))
+
+	def test_bkdy_file_import(self):
+		"""
+			Tests the reading of the BKDY export into the appropriate format
+		"""
+		bkdy_file = test_module.BkdyFile(output_file=self.output_file, fault_time=0.01)
+
+		df = bkdy_file.process_bkdy_output()
+		self.assertAlmostEqual(df.loc[1, constants.BkdyFileOutput.ibasym], 1.6295, places=2)
+		self.assertAlmostEqual(df.loc[1501, constants.BkdyFileOutput.ip], 3.9073, places=2)
+		self.assertAlmostEqual(df.loc[5001, constants.BkdyFileOutput.ik11], 6.1801, places=2)
+		self.assertAlmostEqual(df.loc[5101, constants.BkdyFileOutput.ibsym], 3.7529, places=2)
+
+	def test_bkdy_file_import_fails(self):
+		"""
+			Checks that if a file has been deleted and attempts to process again then an error
+			is shown and if the DataFrame is already empty then raises a SyntaxError
+		"""
+		bkdy_file = test_module.BkdyFile(output_file=self.output_file, fault_time=0.01)
+
+		# Remove the reference to the file before it is processed which should result in an error
+		# being raised when trying to process the file.
+		bkdy_file.output_file = None
+		self.assertRaises(SyntaxError, bkdy_file.process_bkdy_output)
+
 	@classmethod
 	def tearDownClass(cls):
 		# Delete log files created by logger
@@ -132,6 +215,9 @@ class TestBkdyComponents(unittest.TestCase):
 	"""
 		Unit test for individual components required for BKDY calculation
 	"""
+	# Reference added here to avoid issue with referencing in tearDownClass method
+	logger = None
+
 	@classmethod
 	def setUpClass(cls):
 		"""
@@ -142,9 +228,12 @@ class TestBkdyComponents(unittest.TestCase):
 		cls.psse = test_module.PsseControl()
 		cls.psse.load_data_case(pth_sav=SAV_CASE_COMPLETE)
 
+		cls.bkdy = test_module.BkdyFaultStudy(psse_control=cls.psse)
+		cls.output_file = os.path.join(TESTS_DIR, 'bkdy_output{}'.format(constants.General.ext_csv))
+
 	def test_convert(self):
 		""" Test converting of generators """
-		self.assertFalse(self.psse.converted)
+		# Convert SAV case and check status flag is set to True
 		self.psse.convert_sav_case()
 		self.assertTrue(self.psse.converted)
 
@@ -157,7 +246,7 @@ class TestBkdyComponents(unittest.TestCase):
 			Tests the production of the idev file needed for the machines
 		"""
 		# IDEV file
-		machine_idev_file = os.path.join(TESTS_DIR, 'machines.idev')
+		machine_idev_file = os.path.join(TESTS_DIR, 'machines{}'.format(constants.PSSE.ext_bkd))
 		if os.path.exists(machine_idev_file):
 			os.remove(machine_idev_file)
 
@@ -165,14 +254,14 @@ class TestBkdyComponents(unittest.TestCase):
 		mac_data.produce_idev(target=machine_idev_file)
 
 		self.assertTrue(os.path.exists(machine_idev_file))
-		os.remove(idev_file)
+		os.remove(machine_idev_file)
 
 	def test_induction_idev(self):
 		"""
 			Tests the production of the idev file needed for the machines
 		"""
 		# IDEV file
-		idev_file = os.path.join(TESTS_DIR, 'induction.idev')
+		idev_file = os.path.join(TESTS_DIR, 'induction{}'.format(constants.PSSE.ext_bkd))
 		if os.path.exists(idev_file):
 			os.remove(idev_file)
 
@@ -187,7 +276,7 @@ class TestBkdyComponents(unittest.TestCase):
 			Tests the production of the idev file needed for the machines
 		"""
 		# IDEV file
-		idev_file = os.path.join(TESTS_DIR, 'impedances.idev')
+		idev_file = os.path.join(TESTS_DIR, 'impedances{}'.format(constants.PSSE.ext_bkd))
 		if os.path.exists(idev_file):
 			os.remove(idev_file)
 
@@ -201,19 +290,365 @@ class TestBkdyComponents(unittest.TestCase):
 
 	def test_bkdy_calc(self):
 		"""
-			Tests the production of the idev file needed for the machines
+			Carries out the BKDY calculation method and checks output file produced
 		"""
 		# IDEV file
-		idev_file = os.path.join(TESTS_DIR, 'test.idev')
+		idev_file = os.path.join(TESTS_DIR, 'test{}'.format(constants.PSSE.ext_bkd))
 		if os.path.exists(idev_file):
 			os.remove(idev_file)
+		# Output file for BKDY is defined above
+		if os.path.exists(self.output_file):
+			os.remove(self.output_file)
+
+		self.bkdy.create_breaker_duty_file(target_path=idev_file)
+		self.bkdy.main(output_file=self.output_file, fault_time=0.06, name='0.06')
+
+		self.assertTrue(os.path.exists(idev_file))
+		self.assertTrue(os.path.exists(self.output_file))
+		os.remove(idev_file)
+
+	def test_bkdy_calc_all(self):
+		"""
+			Carries out the BKDY calculation method and checks output file produced
+		"""
+		# IDEV file
+		idev_file = os.path.join(TESTS_DIR, 'test{}'.format(constants.PSSE.ext_bkd))
+		output_peak = os.path.join(TESTS_DIR, 'peak_currents{}'.format(constants.General.ext_csv))
+		output_break = os.path.join(TESTS_DIR, 'break_currents{}'.format(constants.General.ext_csv))
+		if os.path.exists(idev_file):
+			os.remove(idev_file)
+		# Output file for BKDY is defined above
+		for x in (output_break, output_peak):
+			if os.path.exists(x):
+				os.remove(x)
+
+		self.bkdy.create_breaker_duty_file(target_path=idev_file)
+		self.bkdy.main(output_file=output_peak, fault_time=0.01, name='0.01')
+		self.bkdy.main(output_file=output_break, fault_time=0.06, name='0.06')
+
+		# Check files created and then remove
+		for path in (output_break, output_peak, idev_file):
+			self.assertTrue(os.path.exists(path))
+			os.remove(path)
+
+	@classmethod
+	def tearDownClass(cls):
+		# Delete log files created by logger
+		if DELETE_LOG_FILES:
+			paths = [
+				cls.logger.pth_debug_log,
+				cls.logger.pth_progress_log,
+				cls.logger.pth_error_log
+			]
+			del cls.logger
+			for pth in paths:
+				if os.path.exists(pth):
+					os.remove(pth)
+
+
+class TestBkdyIntegration(unittest.TestCase):
+	"""
+		Unit test for individual components required for BKDY calculation
+	"""
+	# Reference added here to avoid issue with referencing in tearDownClass method
+	logger = None
+
+	@classmethod
+	def setUpClass(cls):
+		"""
+			Load the SAV case into PSSE for further testing
+		"""
+		# Initialise logger
+		cls.logger = g74.Logger(pth_logs=TEST_LOGS, uid='TestBkdyComponents', debug=g74.constants.DEBUG_MODE)
+		cls.psse = test_module.PsseControl()
+		cls.psse.load_data_case(pth_sav=SAV_CASE_COMPLETE)
+
+	def test_bkdy_calculation(self):
+		"""
+			Test complete calculation works
+		:return:
+		"""
+		# IDEV file
+		idev_file = os.path.join(TESTS_DIR, 'test{}'.format(constants.PSSE.ext_bkd))
+		output_peak = os.path.join(TESTS_DIR, 'peak_currents{}'.format(constants.General.ext_csv))
+		output_break = os.path.join(TESTS_DIR, 'break_currents{}'.format(constants.General.ext_csv))
+
+		# Paths and fault times to be considered
+		output_paths = (output_peak, output_break)
+		fault_times = (0.01, 0.06)
 
 		bkdy = test_module.BkdyFaultStudy(psse_control=self.psse)
 		bkdy.create_breaker_duty_file(target_path=idev_file)
-		bkdy.main()
 
-		self.assertTrue(os.path.exists(idev_file))
+		# Run fault study on each fault time
+		for path, fault_time in zip(output_paths, fault_times):
+			bkdy.main(output_file=path, fault_time=fault_time, name='{:.2f}'.format(fault_time))
+
+		# Process results of BKDY files into relevant inputs
+		dfs = list()
+		for path, fault_time in zip(output_paths, fault_times):
+			# File manually set for unittesting
+			bkdy_file = test_module.BkdyFile(output_file=path, fault_time=fault_time)
+			df = bkdy_file.process_bkdy_output(delete=True)
+			# Delete original file once processed
+			dfs.append(df)
+
+		# Delete idev file
 		os.remove(idev_file)
+
+
+	def test_bkdy_g74_method(self):
+		"""
+			Test that bkdy calculation works with contribution from
+			LV connected machines
+		"""
+		# File constants
+		idev_file = os.path.join(TESTS_DIR, 'test{}'.format(constants.PSSE.ext_bkd))
+		output_peak = os.path.join(TESTS_DIR, 'peak_currents{}'.format(constants.General.ext_csv))
+		output_break = os.path.join(TESTS_DIR, 'break_currents{}'.format(constants.General.ext_csv))
+		excel_export = os.path.join(TESTS_DIR, 'excel_export_g74{}'.format('.xlsx'))
+
+		output_files = (output_peak, output_break)
+		fault_times = (0.01, 0.06)
+		names = (constants.SHEPD.cb_make, constants.SHEPD.cb_break)
+
+		# Add contribution from embedded machines
+		g74_data = test_module.G74FaultInfeed()
+		g74_data.identify_machine_parameters()
+		g74_data.calculate_machine_mva_values()
+		g74_data.add_machines()
+
+		# Carry out BKDY calculation
+		bkdy = test_module.BkdyFaultStudy(psse_control=self.psse)
+		bkdy.create_breaker_duty_file(target_path=idev_file)
+		# Run fault study for each fault time
+		for f, flt_time, name in zip(output_files, fault_times, names):
+			bkdy.main(output_file=f, fault_time=flt_time, name=name)
+
+		# Process output files into DataFrames and export to Excel
+		df = bkdy.combine_bkdy_output()
+
+		# Check if any of the paths already exist and if they do delete them
+		for path in (excel_export, SAV_CASE_COMPLETE2):
+			if os.path.exists(path):
+				os.remove(path)
+
+		# Test exporting and saving results
+		df.to_excel(excel_export)
+		self.psse.save_data_case(pth_sav=SAV_CASE_COMPLETE2)
+
+		# Confirm newly created files exist and then delete
+		for path in (excel_export, SAV_CASE_COMPLETE2, idev_file):
+			self.assertTrue(os.path.exists(path))
+			os.remove(path)
+
+	@classmethod
+	def tearDownClass(cls):
+		# Delete log files created by logger
+		if DELETE_LOG_FILES:
+			paths = [
+				cls.logger.pth_debug_log,
+				cls.logger.pth_progress_log,
+				cls.logger.pth_error_log
+			]
+			del cls.logger
+			for pth in paths:
+				if os.path.exists(pth):
+					os.remove(pth)
+
+
+class TestPsseLoadData(unittest.TestCase):
+	"""
+		Unit tests for the extraction of load data, calculation of equivalent machines and adding them to the PSSE
+		model for the G74 fault contribution
+	"""
+	# Reference added here to avoid issue with referencing in tearDownClass method
+	logger = None
+
+	@classmethod
+	def setUpClass(cls):
+		"""
+			Load the SAV case into PSSE for further testing
+		"""
+		# Initialise logger
+		cls.logger = g74.Logger(pth_logs=TEST_LOGS, uid='TestBkdyComponents', debug=g74.constants.DEBUG_MODE)
+		# #cls.bkdy = test_module.BkdyFaultStudy()
+		cls.output_file = os.path.join(TESTS_DIR, 'bkdy_output{}'.format(constants.General.ext_csv))
+		cls.psse = test_module.PsseControl()
+		cls.psse.load_data_case(pth_sav=SAV_CASE_COMPLETE)
+
+	def test_load_data_summary(self):
+		"""
+			Checks that able to obtain summary of load connected at each busbar
+		"""
+		load_data = test_module.LoadData()
+
+		# Check DataFrame is not empty
+		self.assertFalse(load_data.df.empty)
+
+		df = load_data.summary()
+		# Confirm that the summarised values are less than the total values
+		self.assertTrue(len(df) < len(load_data.df))
+
+		# Confirm particular values at both single load buses and multiple load buses
+		self.assertAlmostEqual(df.loc[100, constants.Loads.load], 5.0249, places=3)
+		self.assertAlmostEqual(df.loc[2501, constants.Loads.load], 5.6932, places=3)
+
+	def test_bus_data(self):
+		"""
+			Confirm able to pull out busbar data with nominal voltage in the format expected
+		"""
+		bus_data = test_module.BusData()
+
+		# Check DataFrame is not empty (if it is then bus_data.update() has not been run by default)
+		self.assertFalse(bus_data.df.empty)
+
+		self.assertAlmostEqual(bus_data.df.loc[100, constants.Busbars.nominal], 132.0, places=1)
+		self.assertAlmostEqual(bus_data.df.loc[101, constants.Busbars.nominal], 33.0, places=1)
+		self.assertAlmostEqual(bus_data.df.loc[2601, constants.Busbars.nominal], 11.0, places=1)
+
+	def test_identifying_machines_lv_only(self):
+		"""
+			Confirm that machines identified at the relevant busbars as either HV or LV when no HV connected machines
+			provided as an input
+		"""
+		g74_data = test_module.G74FaultInfeed()
+		g74_data.identify_machine_parameters()
+
+		# The MVA values should be equal since there are no HV motors
+		df = g74_data.df_machines
+		self.assertTrue(df[constants.Loads.load].equals(df[constants.G74.label_mva]/constants.G74.mva_11))
+
+	def test_identifying_machines_hv_only(self):
+		"""
+			Confirm that machines identified at the relevant busbars as either HV or LV when no HV connected machines
+			provided as an input
+		"""
+		# Produce a DataFrame of busbar numbers for HV machines
+		hv_machines = test_module.BusData().df
+
+		g74_data = test_module.G74FaultInfeed()
+		g74_data.identify_machine_parameters(hv_machines=hv_machines)
+
+		# The MVA values should be equal since there are no HV motors
+		df = g74_data.df_machines
+		self.assertTrue(df[constants.G74.label_mva].equals(df[constants.Loads.load]*constants.G74.mva_hv))
+
+	def test_calculating_machine_parameters(self):
+		"""
+			Confirm that machine parameters correctly added to DataFrame
+		"""
+		g74_data = test_module.G74FaultInfeed()
+		g74_data.identify_machine_parameters()
+		g74_data.calculate_machine_mva_values()
+
+		# The MVA values should be equal since there are no HV motors
+		df = g74_data.df_machines
+
+		# Confirm value is correct for 33kV
+		self.assertAlmostEqual(df.loc[33, constants.Machines.xsubtr], constants.G74.x11, places=4)
+		# Confirm value is correct for 11kV
+		# TODO: Will need to be revised if improved calculation for 11kV equivalents
+		self.assertAlmostEqual(
+			df.loc[11, constants.Machines.xsubtr],
+			constants.G74.x11,
+			places=4
+		)
+
+	def test_adding_machines_psse(self):
+		"""
+			Confirm that machine parameters correctly added to DataFrame
+		"""
+		# Get initial machine data
+		machine_data = test_module.MachineData()
+		machine_data.update()
+		machine_data_initial = machine_data.df
+
+		# Add machines to model
+		g74_data = test_module.G74FaultInfeed()
+		g74_data.identify_machine_parameters()
+		g74_data.calculate_machine_mva_values()
+		g74_data.add_machines()
+
+		# Get DataFrame of updated machines
+		machine_data.update()
+		machine_data_final = machine_data.df
+
+		# Check that all new machines have been added correctly
+		self.assertEqual(
+			len(machine_data_final),
+			len(machine_data_initial)+len(g74_data.df_machines)
+		)
+
+	def test_calculate_machine_time_dependant_contribution(self):
+		"""
+			Function tests adding / updating machines for different time steps
+			and determines whether the fault contribution from a particular machine
+			matches with the expected values.  Machine fault contribution is
+			determined using the IEC method (pssarrays.iecs_currents)
+		:return:
+		"""
+		# Bus numbers to test - These are busbars with motors directly contributing to a fault at
+		# this busbar
+		buses_to_test = [11, 33]
+		fault_times_to_test = (0.0001, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.11, 0.12)
+		# Pre fault voltage = 1.0p.u. because modelled as a slack busbar in PSSe test model
+		pre_fault_v = 1.0
+		# Load value modelled as 5.0 MVA in PSSe test model
+		load_value = 5.0
+
+		# Model setup
+		# Add machines to model
+		g74_data = test_module.G74FaultInfeed()
+		g74_data.identify_machine_parameters()
+		g74_data.calculate_machine_mva_values()
+
+		# IEC method for fault current calculations
+		iec = test_module.IecFaults(psse=self.psse, buses=buses_to_test)
+
+		# Iterative loop that tests a range of fault times
+		dfs = list()
+		expected_fault_infeed_pu = list()
+		for fault_time in fault_times_to_test:
+			# Calculate the expected X value and expected fault in feed in per unit
+			new_x_value = 1.0 / ((1.0 / constants.G74.x11) * math.exp(-fault_time / constants.G74.t11))
+			expected_fault_infeed_pu.append(pre_fault_v/(constants.G74.rpos**2 + new_x_value**2)**0.5)
+			# Calculate new machine impedance values
+			g74_data.calculate_machine_impedance(fault_time=fault_time)
+
+			# Confirm value is correct for two difference values
+			self.assertAlmostEqual(
+				g74_data.df_machines.loc[1, constants.Machines.xsubtr], new_x_value, places=5)
+			self.assertAlmostEqual(
+				g74_data.df_machines.loc[1, constants.Machines.xsynch], new_x_value, places=5)
+
+			# Add machines to model
+			g74_data.add_machines()
+
+			# Run fault study for both busbars at this time step
+			df = iec.fault_3ph_all_buses(fault_time=fault_time)
+			dfs.append(df)
+
+		# Combine dataframes into an overall list
+		df_all = pd.concat(dfs, axis=1, keys=fault_times_to_test)
+
+		# Calculate the values that would be expected based on the fault times tested
+		expected_values_11 = dict(zip(
+			fault_times_to_test,
+			[x*load_value*constants.G74.mva_11/(math.sqrt(3)*11.0) for x in expected_fault_infeed_pu]
+		))
+		expected_values_33 = dict(zip(
+			fault_times_to_test,
+			[x*load_value*constants.G74.mva_33/(math.sqrt(3)*33.0) for x in expected_fault_infeed_pu]
+		))
+
+		# Extract the RMS symmetrical break values which vary correctly with fault time
+		df_ik = df_all.xs(constants.BkdyFileOutput.ibsym, axis=1, level=1, drop_level=True)
+		cols = df_ik.columns
+		# Validate that all values are correct
+		for fault_time in cols:
+			self.assertAlmostEqual(expected_values_11[fault_time], df_ik.loc[11, fault_time], places=3)
+			self.assertAlmostEqual(expected_values_33[fault_time], df_ik.loc[33, fault_time], places=3)
 
 	@classmethod
 	def tearDownClass(cls):
