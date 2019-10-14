@@ -13,6 +13,7 @@ import unittest
 import os
 import sys
 import pandas as pd
+import numpy as np
 import math
 import g74
 import g74.psse as test_module
@@ -286,7 +287,7 @@ class TestBkdyComponents(unittest.TestCase):
 		induction_machines.add_to_idev(target=idev_file)
 
 		self.assertTrue(os.path.exists(idev_file))
-		os.remove(idev_file)
+		# #os.remove(idev_file)
 
 	def test_bkdy_calc(self):
 		"""
@@ -396,7 +397,6 @@ class TestBkdyIntegration(unittest.TestCase):
 		# Delete idev file
 		os.remove(idev_file)
 
-
 	def test_bkdy_g74_method(self):
 		"""
 			Test that bkdy calculation works with contribution from
@@ -439,6 +439,54 @@ class TestBkdyIntegration(unittest.TestCase):
 
 		# Confirm newly created files exist and then delete
 		for path in (excel_export, SAV_CASE_COMPLETE2, idev_file):
+			self.assertTrue(os.path.exists(path))
+			os.remove(path)
+
+	def test_calculate_machine_time_dependant_contribution_bkdy(self):
+		"""
+			Confirms that the fault current contribution from the embedded machines
+			is correct on both sides of the transformer.
+
+			Note: This has to be carried out using BKDY since the IEC method includes
+			a correction factor for the transformer.
+		"""
+		# File constants
+		idev_file = os.path.join(TESTS_DIR, 'test{}'.format(constants.PSSE.ext_bkd))
+		fault_times = list(np.arange(0.0, 0.12, 0.01))
+		buses_to_fault = [1102, 3302]
+		excel_export = os.path.join(TESTS_DIR, 'excel_export_g74{}'.format('.xlsx'))
+
+		# #names = ['{:.0f} ms'.format(x*1000) for x in fault_times]
+
+		# Load model
+		self.psse.load_data_case(pth_sav=SAV_CASE_COMPLETE)
+
+		# Create circuit breaker duty file
+		bkdy = g74.psse.BkdyFaultStudy(psse_control=self.psse)
+		bkdy.create_breaker_duty_file(target_path=idev_file)
+
+		# Update model to include contribution from embedded machines
+		g74_data = g74.psse.G74FaultInfeed()
+		g74_data.identify_machine_parameters()
+		g74_data.calculate_machine_mva_values()
+
+		df = bkdy.calculate_fault_currents(
+			fault_times=fault_times, g74_infeed=g74_data,
+			# #buses=buses_to_fault, delete=False
+			delete=False
+		)
+
+		# Check if any of the paths already exist and if they do delete them
+		for path in (excel_export, SAV_CASE_COMPLETE2):
+			if os.path.exists(path):
+				os.remove(path)
+
+		# Test exporting and saving results
+		df.to_excel(excel_export)
+		self.psse.save_data_case(pth_sav=SAV_CASE_COMPLETE2)
+
+		# Confirm newly created files exist and then delete
+		for path in (SAV_CASE_COMPLETE2, idev_file):
 			self.assertTrue(os.path.exists(path))
 			os.remove(path)
 
@@ -580,14 +628,19 @@ class TestPsseLoadData(unittest.TestCase):
 			len(machine_data_initial)+len(g74_data.df_machines)
 		)
 
-	def test_calculate_machine_time_dependant_contribution(self):
+	def test_calculate_machine_time_dependant_ac_contribution_iec(self):
 		"""
 			Function tests adding / updating machines for different time steps
 			and determines whether the fault contribution from a particular machine
 			matches with the expected values.  Machine fault contribution is
 			determined using the IEC method (pssarrays.iecs_currents)
+
+			Calculation is performed for AC component only
 		:return:
 		"""
+		# Reload SAV case
+		self.psse.load_data_case()
+
 		# Bus numbers to test - These are busbars with motors directly contributing to a fault at
 		# this busbar
 		buses_to_test = [11, 33]
@@ -649,6 +702,74 @@ class TestPsseLoadData(unittest.TestCase):
 		for fault_time in cols:
 			self.assertAlmostEqual(expected_values_11[fault_time], df_ik.loc[11, fault_time], places=3)
 			self.assertAlmostEqual(expected_values_33[fault_time], df_ik.loc[33, fault_time], places=3)
+
+	def test_calculate_machine_time_dependant_dc_contribution_iec(self):
+		"""
+			Function tests adding / updating machines for different time steps
+			and determines whether the fault contribution from a particular machine
+			matches with the expected values.  Machine fault contribution is
+			determined using the IEC method (pssarrays.iecs_currents)
+
+			Validation is performed for DC component which doesn't involve changing the
+			motor contribution.
+		:return:
+		"""
+		# Bus numbers to test - These are busbars with motors directly contributing to a fault at
+		# this busbar
+		buses_to_test = [11, 33]
+		fault_times_to_test = (0.0001, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.11, 0.12)
+		# Pre fault voltage = 1.0p.u. because modelled as a slack busbar in PSSe test model
+		pre_fault_v = 1.0
+		# Load value modelled as 5.0 MVA in PSSe test model
+		load_value = 5.0
+		# Calculated DC component for each time step
+		expected_ik_pu = pre_fault_v / (constants.G74.rpos**2 + constants.G74.x11**2)**0.5
+		expected_values_11 = dict()
+		expected_values_33 = dict()
+
+		# Model setup
+		# Add machines to model
+		g74_data = test_module.G74FaultInfeed()
+		g74_data.identify_machine_parameters()
+		g74_data.calculate_machine_mva_values()
+
+		# For DC component machine parameters do not change with time since based on Ik''
+		g74_data.calculate_machine_impedance(fault_time=0.0)
+		# Add machines to model now since parameters do not change
+		g74_data.add_machines()
+
+		# IEC method for fault current calculations
+		iec = test_module.IecFaults(psse=self.psse, buses=buses_to_test)
+
+		# Iterative loop that tests a range of fault times
+		dfs = list()
+		for fault_time in fault_times_to_test:
+			# Calculate the expected DC value at this time using equation 5.3.1 of G74
+			expected_values_11[fault_time] = (
+					math.sqrt(2) *
+					(expected_ik_pu*load_value*constants.G74.mva_11/(math.sqrt(3)*11.0)) *
+					math.exp(-2*math.pi*50.0*fault_time*(1.0/constants.G74.x_r_11))
+			)
+			expected_values_33[fault_time] = (
+					math.sqrt(2) *
+					(expected_ik_pu * load_value * constants.G74.mva_33 / (math.sqrt(3) * 33.0)) *
+					math.exp(-2 * math.pi * 50.0 * fault_time * (1.0 / constants.G74.x_r_33))
+			)
+
+			# Run fault study for both busbars at this time step
+			df = iec.fault_3ph_all_buses(fault_time=fault_time)
+			dfs.append(df)
+
+		# Combine dataframes into an overall list
+		df_all = pd.concat(dfs, axis=1, keys=fault_times_to_test)
+
+		# Extract the DC component and confirm vary correctly with fault time
+		df_idc = df_all.xs(constants.BkdyFileOutput.idc, axis=1, level=1, drop_level=True)
+		cols = df_idc.columns
+		# Validate that all values are correct
+		for fault_time in cols:
+			self.assertAlmostEqual(expected_values_11[fault_time], df_idc.loc[11, fault_time], places=3)
+			self.assertAlmostEqual(expected_values_33[fault_time], df_idc.loc[33, fault_time], places=3)
 
 	@classmethod
 	def tearDownClass(cls):

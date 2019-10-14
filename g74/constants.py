@@ -26,6 +26,12 @@ class General:
 		General constants
 	"""
 	ext_csv = '.csv'
+	node_label = 'Node Details'
+	bus_name = 'Name'
+	bus_voltage = 'Nominal (kV)'
+	pre_fault = 'Pre-fault Voltage (p.u.)'
+	bus_number = 'Busbar Number'
+	x_r = 'X/R'
 
 	def __init__(self):
 		"""
@@ -80,7 +86,15 @@ class BkdyFileOutput:
 	# Error flag if Vpk returns infinity
 	infinity_error = '*******'
 
-	reg_search = re.compile('(\d\.\d+)|(\d+\.\d)|(-\d+\.\d{2})')
+	# Regex search expression broken down as follows:
+	# (\d\.\d{4,5}(?!\d+\.)) = Matches single decimal followed by 4 or 5 numerical values where there are not
+	# 							more numerical values and a decimal point following that point.
+	# #							This will pick up the R and X values as well as the pre-fault voltage
+	# (\d{1,3}\.\d{2}) = Matches for either a 1 to 3 decimal number followed by a decimal point and a 2 decimal number.
+	# #					This will pick up angles.
+	# (\d+\.\d) = Matches for any number of numerical values leading a decimal point with a single numerical value
+	# 			afterwards.  This will pick up the fault current magnitudes.
+	reg_search = re.compile('(\d\.\d{4,5}(?!\d+\.))|(\d{1,3}\.\d{2})|(\d+\.\d)')
 
 	# NaN value that is returned if error calculating fault current values
 	nan_value = 'NaN'
@@ -166,6 +180,9 @@ class PSSE:
 	def_short_circuit_units = 1
 	# 1 = physical units
 	def_short_circuit_coordinates = 1
+
+	# Minimum fault time that can be considered (in seconds)
+	min_fault_time = 0.0001
 
 	def __init__(self):
 		self.psse_py_path = str()
@@ -261,6 +278,9 @@ class Machines:
 	x1q = "X'q"
 	x11 = "X''"
 
+	tx_r = 'TX_R'
+	tx_x = 'TX_X'
+
 	# Minimum expected realistic RPOS value
 	min_r_pos = 0.0
 	# Assumed X/R value when they are missing
@@ -338,6 +358,7 @@ class Excel:
 class G74:
 	# Assumed X/R ratio of equivalent motor connected at 33kV
 	x_r_33 = 2.76
+	x_r_11 = 2.76
 	# MVA contribution of equivalent motor per MVA of connected load (some ratio of these may be needed
 	# based on whether load is assumed to be LV or HV connected.
 	# TODO: Determine ratios of LV and HV connected load
@@ -348,7 +369,7 @@ class G74:
 	# 11 and 33kV parameters as per SHETL documentation
 	# TODO: Validate SHETL parameters and document in report
 	mva_33 = 1.16
-	mva_11 = 2.3
+	mva_11 = 1.16
 
 	# Minimum MVA value for load to be considered
 	min_load_mva = 0.15
@@ -379,9 +400,15 @@ class G74:
 	rzero = 10000.0
 	xzero = 10000.0
 
+	# Transformer impedance between 33kV and 11kV representation
+	tx_r = 0.04
+	tx_x = 0.6
+
 	# Convert parameters to dictionary for easy updating in PSSe
 	parameters_33 = {
 			Machines.rpos: rpos,
+			Machines.tx_r: 0.0,
+			Machines.tx_x: 0.0,
 			Machines.xsubtr: x11,
 			Machines.xtrans: x11,
 			Machines.xsynch: x11,
@@ -393,12 +420,34 @@ class G74:
 			Machines.rsource: rpos
 		}
 
+	# Parameters for 11kV connected loads that take into consideration the transformer between the
+	# 33kV and 11kV busbars
+	parameters_11 = {
+		Machines.rpos: rpos-tx_r,
+		Machines.tx_r: tx_r,
+		Machines.tx_x: tx_x,
+		Machines.xsubtr: x11-tx_x,
+		Machines.xtrans: x11-tx_x,
+		Machines.xsynch: x11-tx_x,
+		Machines.rneg: rpos-tx_r,
+		Machines.xneg: x11-tx_x,
+		Machines.rzero: rzero,
+		Machines.xzero: xzero,
+		Machines.xsource: x11-tx_x,
+		Machines.rsource: rpos-tx_r
+	}
+
 	# TODO: Calculate parameters for 33/11kV transformers and sensitivity study to determine the impact of these values
 	# Transformer data in per unit on 100MVA base values
 	# No longer accounting for 33/11kV transformers on a case by case basis but applying
 	# SHETL parameters detailed above
 	# #tx_r = 0.07142
 	# #tx_x = 1.0
+
+	# This is the minimum fault time that must be considered for the faults to deteremine Ik'' and Ip
+	min_fault_time = 0.0
+	# This is the time considered for returning the peak fault current
+	peak_fault_time = 0.01
 
 	def __init__(self):
 		"""
@@ -451,6 +500,28 @@ class SHEPD:
 	results_per_fault[cb_break] = [
 		BkdyFileOutput.ibsym,
 		BkdyFileOutput.ibasym
+	]
+
+	cols_for_min_fault_time = [
+		BkdyFileOutput.ik11,
+		BkdyFileOutput.ibsym,
+		BkdyFileOutput.ibasym,
+		BkdyFileOutput.idc,
+		BkdyFileOutput.x,
+		BkdyFileOutput.r
+	]
+
+	cols_for_peak_fault_time = [
+		BkdyFileOutput.ip,
+		BkdyFileOutput.ibsym,
+		BkdyFileOutput.ibasym,
+		BkdyFileOutput.idc
+	]
+
+	cols_for_other_fault_time = [
+		BkdyFileOutput.ibsym,
+		BkdyFileOutput.ibasym,
+		BkdyFileOutput.idc
 	]
 
 	# TODO: This should be defined as an input but the default position is these values

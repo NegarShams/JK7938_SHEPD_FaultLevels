@@ -1009,7 +1009,7 @@ class PsseControl:
 				raise ValueError('Not possible to define subsystem')
 
 		# Define subsystem based on this initialised sid code
-		ierr = func_subsys(sid=sid, usekv=0, numbus=num_buses, busnum=buses)
+		ierr = func_subsys(sid=sid, numbus=num_buses, busnum=buses)
 		if ierr == 0:
 			self.logger.debug('Bus subsystem defined with sid = {}'.format(sid))
 		else:
@@ -1038,6 +1038,7 @@ class BkdyFaultStudy:
 		self.psse = psse_control
 		# Subsystem used for selecting all the busbars
 		self.sid = 1
+		self.all_buses = 1
 
 		self.logger = logging.getLogger(constants.Logging.logger_name)
 		self.breaker_duty_file = str()
@@ -1125,21 +1126,23 @@ class BkdyFaultStudy:
 
 		# Convert model
 		self.psse.convert_sav_case()
-
+		# Function for carrying out the study
 		func_bkdy = psspy.bkdy
-		# TODO: ALL needs to be defined with an input once the bus subsystem has been defined
 
 		# Change destination to file type object
 		self.change_report_output(destination=constants.PSSE.file_output, output_file=output_file)
 
+		# Carry out fault current calculation
 		ierr = func_bkdy(
 			sid=self.sid,
-			all=1,
+			all=self.all_buses,
 			apiopt=1,
 			lvlbak=-1,
 			flttim=fault_time,
 			bfile=self.breaker_duty_file)
 
+		# Change destination back
+		# TODO: Could move this to a different component to improve efficiency
 		self.change_report_output(destination=constants.PSSE.output[constants.DEBUG_MODE])
 
 		if ierr > 0:
@@ -1162,41 +1165,183 @@ class BkdyFaultStudy:
 		:param bool delete: (optional=True) - Will delete the original bkdy output files
 		:return pd.DataFrame() self.df_combined_results:  DataFrame of the combined results ready for excel export
 		"""
-		# Empty list that will be populated with DataFrames as they are processed
-		dfs = list()
+		# Empty dictionary that will be populated with DataFrames as they are processed
+		dfs = dict()
 		# Loops through each of the results and processes the files
 		for name, bkdy_file in self.bkdy_files.iteritems():
 			self.logger.debug(
 				'Processing the BKDY results for fault named: {} and stored in: {}'.format(name, bkdy_file)
 			)
-
 			# Extract all data from file and delete file since no longer needed
-			df_temp = bkdy_file.process_bkdy_output(delete=delete)
+			df = bkdy_file.process_bkdy_output(delete=delete)
+			dfs[name] = df
 
-			# Retain the relevant file for this particular named fault
-			c = constants.SHEPD
-			try:
-				cols_to_keep = c.results_per_fault[name]
-			except KeyError:
-				# If name of fault does not exist then retain all the column headers and adjust to include name
-				self.logger.warning(
-					(
-						'The fault named: {} has not been defined in the constants <{}> and therefore it is not '
-						'possible identify the specific results that should be exported.  Instead all results will be '
-						'exported with _{} added to the end of the result'
-					).format(name, c, name)
-				)
-				cols_to_keep = ['{}_{}'.format(x, name) for x in df_temp.columns]
-
-			# Extract relevant columns for this DataFrame
-			df = df_temp[cols_to_keep]
-			dfs.append(df)
-
-		# Combine results into a single DataFrame
-		self.df_combined_results = pd.concat(dfs, axis=1)
+		# Combine results into a single DataFrame with an additional level to identify the fault by name.
+		# Subsequent data extraction then deals with processing the relevant data
+		self.df_combined_results = pd.concat(dfs.values(), axis=1, keys=dfs.keys())
 
 		return self.df_combined_results
 
+	def calculate_fault_currents(self, fault_times, g74_infeed, buses=list(), delete=True):
+		"""
+			Function calculates the fault currents at every busbar listed taking into consideration
+			that the DC component and peak make has to be calculated based on t=0 and only the RMS
+			symmetrical component should be recalculated to account for decrement.
+
+			Two iterations of the fault current calculations are performed, one for every timestep with machines
+			initialised for time == 0ms and then for every timestep with machine parameters recalculated.
+		:param list fault_times:  List of the fault times that should be considered
+		:param list names: List of names to be associated with each fault time
+		:param G74FaultInfeed() g74_infeed:  Reference to the g74 handle so that machine parameters can be updated
+		:param list buses: (optional) List of busbars to be faulted if empty list then all busbars faulted
+		:param bool delete: (optional=True) - Will delete the original bkdy output files
+		:return None:
+		"""
+		# Fault current calculation to determine Ik'', peak make and DC decrement
+		# Calculate the fault impedance values for the initial time of 0.0
+		g74_infeed.calculate_machine_impedance(fault_time=0.0, update=True)
+
+		# Produce name of results files for initial run
+		current_script_path = os.path.dirname(os.path.realpath(__file__))
+		initial_fault_files = [
+			os.path.join(current_script_path, 'fault_ik_init{:.2f}{}'.format(x, constants.General.ext_csv))
+			for x in fault_times
+		]
+		ac_decrement_files = [
+			os.path.join(current_script_path, 'fault_ik_decr{:.2f}{}'.format(x, constants.General.ext_csv))
+			for x in fault_times
+		]
+		# Initial fault must be carried out at 0.0 ms to get peak and Ik'' value
+		if constants.G74.min_fault_time not in fault_times:
+			fault_times.insert(0, constants.G74.min_fault_time)
+			self.logger.warning(
+				(
+					'{:.2f} fault time missing from inputs.  This must be included to determine the '
+					'initial fault current.  This has been added to the fault'
+					'times'
+				).format(constants.G74.min_fault_time)
+			)
+
+		if constants.G74.peak_fault_time not in fault_times:
+			fault_times.insert(0, constants.G74.peak_fault_time)
+			self.logger.warning(
+				(
+					'{:.2f} fault time missing from inputs.  This must be included to determine the '
+					'peak current value in line with G74.  This time has been added to the fault'
+					'times'
+				).format(constants.G74.peak_fault_time)
+			)
+
+		# Sort list of times into ascending order
+		fault_times.sort()
+
+		# Define bus subsystem based on buses
+		if buses:
+			self.psse.define_bus_subsystem(buses=buses)
+			self.sid = self.psse.sid
+			self.logger.debug('Following busbars defined for fault analysis {}'.format(buses))
+			self.all_buses = 0
+		else:
+			self.logger.info('No busbars defined and so all busbars will be faulted')
+			self.all_buses = 1
+
+		# Loop through fault current studies producing fault files initially for ik''
+		for fault, file_path in zip(fault_times, initial_fault_files):
+			# TODO: Confirm that this is actually required
+			# If fault time is set to 0.0 then not possible and something slightly bigger is necessary
+			# #if fault == 0.0:
+			# #	fault = constants.PSSE.min_fault_time
+			# Run fault study for this result
+			# Fault is given name value for subsequent processing
+			self.main(name=fault, output_file=file_path, fault_time=fault)
+			self.psse.save_data_case(pth_sav=r'C:\Users\david\PycharmProjects\JK7938_SHEPD_FaultLevels\g74\test_files\TEST.sav')
+
+		# Process results from initial fault into a DataFrame and delete if necessary
+		df = self.combine_bkdy_output(delete=delete)
+
+		# Loop through fault current studies producing fault files initially for ik(t)
+		for fault, file_path in zip(fault_times, ac_decrement_files):
+			# TODO: Confirm that this is actually required
+			# If fault time is set to 0.0 then not possible and something slightly bigger is necessary
+			# #if fault == 0.0:
+			# #	fault = constants.PSSE.min_fault_time
+
+			# Recalculate machine parameters based on fault time
+			g74_infeed.calculate_machine_impedance(fault_time=fault, update=True)
+			# Run fault study for this result
+			self.main(name=fault, output_file=file_path, fault_time=fault)
+
+		# Process results from ik(t) fault into a DataFrame and delete results files if necessary
+		df_decr = self.combine_bkdy_output(delete=delete)
+
+		# Update ik(t) values in initial calculation with values from second dataframe
+		df.update(df_decr.xs(constants.BkdyFileOutput.ibsym, axis=1, level=1, drop_level=False))
+
+		df = self.process_combined_results(df)
+		df = self.add_busbar_data(df)
+		return df
+
+	def process_combined_results(self, df):
+		"""
+			Function will loop through and process the complete set of results to produce the data that is
+			necessary for presenting
+		:param pd.DataFrame() df:
+		:return:
+		"""
+		#
+		dfs = dict()
+		# TODO: How to extract section of DataFrame at this point
+		for time, df_section in df.groupby(level=0, axis=1):
+			# Extract relevant sections
+			if round(time, 3) == constants.G74.min_fault_time:
+				df_temp = df_section[time][constants.SHEPD.cols_for_min_fault_time]
+				# Calculate X/R value
+				df_temp[constants.General.x_r] = (
+					df_temp[constants.BkdyFileOutput.x].div(
+						df_temp[constants.BkdyFileOutput.r]
+					)
+				)
+			elif round(time, 3) == constants.G74.peak_fault_time:
+				df_temp = df_section[time][constants.SHEPD.cols_for_peak_fault_time]
+			else:
+				df_temp = df_section[time][constants.SHEPD.cols_for_other_fault_time]
+
+			# Re-calculate asymmetrical fault current
+			df_temp[constants.BkdyFileOutput.ibasym] = (
+				df_temp[constants.BkdyFileOutput.ibsym].pow(2) +
+				df_temp[constants.BkdyFileOutput.idc].pow(2)
+			).pow(0.5)
+
+			# Append to list
+			dfs[time] = df_temp
+
+		df = pd.concat(dfs.values(), axis=1, keys=dfs.keys())
+		df.sort_index(axis=1, level=0, inplace=True, ascending=True)
+		return df
+
+	def add_busbar_data(self, df):
+		"""
+			Function will add in busbar data to DataFrame
+		:param pd.DataFrame df:
+		:return:
+		"""
+		# Constants
+		c = constants.General
+		# Get busbar data from PSSE model
+		bus_data = BusData()
+		# Populate new DAtaFrame with relevant technical data based on indexes of busbars already faulted
+		df_bus_data = pd.DataFrame(index=df.index)
+		df_bus_data.loc[:, c.bus_name] = bus_data.df.loc[:, bus_data.c.bus_name]
+		df_bus_data.loc[:, c.bus_voltage] = bus_data.df.loc[:, bus_data.c.nominal]
+		df_bus_data.loc[:, c.pre_fault] = bus_data.df.loc[:, bus_data.c.voltage]
+		# Convert to MultiIndex
+		df_bus_data.columns = pd.MultiIndex.from_product([[c.node_label], df_bus_data.columns])
+
+		# Merge DataFrames together
+		df = pd.concat([df_bus_data, df], axis=1)
+		df.index.name = c.bus_number
+
+		return df
 
 # TODO: To be completed
 class FormatResults:
@@ -1503,7 +1648,7 @@ class G74FaultInfeed:
 		# Series created to allow easy adding to DataFrame
 		# TODO: Efficiency improvement possible here since could just filter rows and assign in place
 		df_33 = self.df_machines.loc[self.df_machines[constants.Busbars.nominal] > 11.0].assign(**self.c.parameters_33)
-		df_11 = self.df_machines.loc[self.df_machines[constants.Busbars.nominal] <= 11.0].assign(**self.c.parameters_33)
+		df_11 = self.df_machines.loc[self.df_machines[constants.Busbars.nominal] <= 11.0].assign(**self.c.parameters_11)
 
 		# Calculate MVA values for machine taking into consideration SHETL parameters
 		df_33[self.c.label_mva] = self.c.mva_33 * df_33[constants.Loads.load]
@@ -1514,10 +1659,11 @@ class G74FaultInfeed:
 
 		self.logger.debug('Parameters calculated for machines connecting to represent embedded load at 11 and 33kV')
 
-	def calculate_machine_impedance(self, fault_time):
+	def calculate_machine_impedance(self, fault_time, update=False):
 		"""
 			Calculates and updates the machine impedance values based on the fault time
 		:param float fault_time: (optional=0.0) - X'', X' and X parameters based on the fault time input in seconds
+		:param bool update:  If set to True then it will automatically update the machine impedance values once calculated
 		:return None:
 		"""
 		# Calculate X'', X' and X values based on fault_time (based on equation 9.5.2 of G74 1992
@@ -1525,19 +1671,34 @@ class G74FaultInfeed:
 
 		# Update DataFrame with these values
 		c = constants.Machines
+		# TODO: Confirm, this makes the assumption that the transformer impedance varies with the size of
+		# TODO: the load connected which doesn't seem fully correct.
+		# Update values based on new x_value taking into consideration the transformer reactance
 		self.df_machines.loc[:, (
 									c.xsubtr,
 									c.xtrans,
-									c.xsynch,
-									c.xsource,
-									c.xneg
+									c.xsynch
 								)] = x_value
+
+		self.df_machines.loc[:, (
+									c.xsubtr,
+									c.xtrans,
+									c.xsynch
+								)] = self.df_machines.loc[:, (
+									c.xsubtr,
+									c.xtrans,
+									c.xsynch
+								)] - self.df_machines.loc[:, c.tx_x]
 
 		self.logger.debug(
 			(
 				"G74 machine values updated for a fault time of {:.2f} seconds based on an x'' of {:.3f} p.u., "
 				"time constant of {:.2f} seconds.  Resulting in x at time of fault of {:.3f} p.u."
 			).format(fault_time, self.c.x11, self.c.t11, x_value))
+
+		# If set to True then will automatically go and update the machine impedance values once calculated
+		if update:
+			self.add_machines()
 
 	def add_machines(self):
 		"""
@@ -1584,6 +1745,8 @@ class G74FaultInfeed:
 				realar5=0.0,		# Ensures machine P output is 0.0 (PT)
 				realar6=0.0,		# Ensures machine P output is 0.0 (PB)
 				realar7=machine[self.c.label_mva],
+				realar8=machine[constants.Machines.rsource],
+				realar9=machine[constants.Machines.xsource]
 			)
 
 			# Update machine sequence values
