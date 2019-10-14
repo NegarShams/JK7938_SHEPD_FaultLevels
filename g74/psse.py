@@ -971,6 +971,7 @@ class PsseControl:
 		# PSSE functions
 		func_subsys_init = psspy.bsysinit
 		func_subsys = psspy.bsys
+		func_subsys_add = psspy.bsyso
 
 		num_buses = len(buses)
 		# Check number of busbars is enough otherwise just define as entire subsystem
@@ -1008,17 +1009,20 @@ class PsseControl:
 				self.logger.critical('{}\n{}'.format(msg0, msg1))
 				raise ValueError('Not possible to define subsystem')
 
-		# Define subsystem based on this initialised sid code
-		ierr = func_subsys(sid=sid, numbus=num_buses, busnum=buses)
-		if ierr == 0:
-			self.logger.debug('Bus subsystem defined with sid = {}'.format(sid))
-		else:
-			self.logger.critical(
-				(
-					'Error occurred trying to define bus subsystem.  The function <{}> returned the error code {}'
-				).format(func_subsys.__name__, ierr)
-			)
-			raise ValueError('Unable to create bus subsystem')
+		# Loop through each bus and add to bus subsystem
+		# Seems to produce an error if done via the sub-system definition method
+		for bus in buses:
+			ierr = func_subsys_add(sid=sid, busnum=bus)
+			if ierr == 0:
+				self.logger.debug('Busbar {} added to bus subsystem with SID = {}'.format(bus, sid))
+			else:
+				self.logger.critical(
+					(
+						'Unable to add busbar {} to subsystem with SID = {} and function '
+						'<{}> returned the following error code {}'
+					).format(bus, sid, func_subsys_add.__name__, ierr)
+				)
+				raise ValueError('Unable to add busbar to subsystem')
 
 		self.sid = sid
 

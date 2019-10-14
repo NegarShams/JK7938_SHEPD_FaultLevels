@@ -472,8 +472,7 @@ class TestBkdyIntegration(unittest.TestCase):
 
 		df = bkdy.calculate_fault_currents(
 			fault_times=fault_times, g74_infeed=g74_data,
-			# #buses=buses_to_fault, delete=False
-			delete=False
+			buses=buses_to_fault, delete=True
 		)
 
 		# Check if any of the paths already exist and if they do delete them
