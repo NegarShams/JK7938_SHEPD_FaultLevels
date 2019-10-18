@@ -1,31 +1,50 @@
 import unittest
 import os
-import hast2_1.gui as TestModule
+import sys
+import g74
+import g74.gui as test_module
 
-FULL_TEST = True
 
 TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
-SEARCH_PTH = os.path.join(TESTS_DIR, 'results1')
+TEST_LOGS = os.path.join(TESTS_DIR, 'logs')
+
+two_up = os.path.abspath(os.path.join(TESTS_DIR, '../..'))
+sys.path.append(two_up)
+
+DELETE_LOG_FILES = True
 
 
 class TestGui(unittest.TestCase):
 	"""
 		UnitTest package to confirm that GUI can be produced correctly
 	"""
+	logger = None
+
+	@classmethod
+	def setUpClass(cls):
+		"""
+			Initialise logger
+		"""
+		# Initialise logger
+		cls.logger = g74.Logger(pth_logs=TEST_LOGS, uid='TestGUI', debug=g74.constants.DEBUG_MODE)
+
 	def test_file_selection(self):
 		"""Tests for the file selection function"""
-		self.assertRaises(SyntaxError, TestModule.file_selector)
-		self.assertRaises(SyntaxError, TestModule.file_selector, open_file=True, save_dir=True)
-		# Following tests require the GUI to load and so are only run occasionally
-		if FULL_TEST:
-			print('\n ## Select cancel for UnitTest of file dialog## \n')
-			target_file = TestModule.file_selector(initial_pth=TESTS_DIR,
-												   open_file=True)
-			self.assertEqual(target_file, '')
+		gui = test_module.MainGUI(title='Testing GUI')
 
-	@unittest.skipIf(not FULL_TEST, 'Skipping GUI creation for testing')
-	def test_main_gui(self):
-		"""Tests for the main GUI"""
-		print('** Click cancel **')
-		gui = TestModule.MainGUI(start_directory=TESTS_DIR)
-		self.assertEqual(gui.results_files_list, [])
+	@classmethod
+	def tearDownClass(cls):
+		# Delete log files created by logger
+		if DELETE_LOG_FILES:
+			paths = [
+				cls.logger.pth_debug_log,
+				cls.logger.pth_progress_log,
+				cls.logger.pth_error_log
+			]
+			del cls.logger
+			for pth in paths:
+				try:
+					if os.path.exists(pth):
+						os.remove(pth)
+				except WindowsError:
+					print('Unable to delete file: {}'.format(pth))

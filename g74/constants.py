@@ -33,6 +33,10 @@ class General:
 	bus_number = 'Busbar Number'
 	x_r = 'X/R'
 
+	# Default file types used for import / export
+	file_types = (('xlsx files', '*.xlsx'), ('All Files', '*.*'))
+	sav_types = (('PSSE (SAV) files', '*.sav'), ('All Files', '*.*'))
+
 	def __init__(self):
 		"""
 			Just to avoid error message
@@ -45,6 +49,11 @@ class GUI:
 		Constants for the user interface
 	"""
 	gui_name = 'PSC G7/4 Fault Current Tool'
+	default_fault_times = '0.00, 0.01, 0.06'
+
+	# Default on whether the SAV case should be reloaded at the end of the fault
+	# study or start from empty
+	reload_sav_case = 1
 
 	def __init__(self):
 		"""
@@ -73,9 +82,21 @@ class BkdyFileOutput:
 
 	ik11 = "Ik'' ({})".format(current_unit)
 	ip = 'Ip ({})'.format(current_unit)
+	# Sum of DC components contributing to bus determine peak make
+	ip_method1 = 'Ip sum of DC({})'.format(current_unit)
+	# Peak calculated using x/r of thevenin impedance
+	ip_method2 = 'Ip X/R method ({})'.format(current_unit)
 	ibsym = 'Ibsym ({})'.format(current_unit)
 	ibasym = 'Ibasym ({})'.format(current_unit)
+	# Sum of DC components contributing to bus determine peak make
+	ibasym_method1 = 'Ibasym ({})'.format(current_unit)
+	# DC component calculated using x/r of thevenin impedance
+	ibasym_method2 = 'Ibasym ({})'.format(current_unit)
 	idc = 'DC ({})'.format(current_unit)
+	# Sum of DC components contributing to bus determine peak make
+	idc_method1 = 'DC from sum of DC({})'.format(current_unit)
+	# DC component calcualted from X/R at point of fault
+	idc_method2 = 'DC X/R method({})'.format(current_unit)
 	idc0 = 'DC_t0 ({})'.format(current_unit)
 	v_prefault = 'V Pre-fault (p.u.)'
 
@@ -114,13 +135,18 @@ class BkdyFileOutput:
 		:param str line_type:  based on the values defined above returns the relevant column numbers
 		:return dict, int (cols, expected_length):  Dictionary of column positions, expected length of list of floats
 		"""
+		# TODO: For peak fault current in make calculation should maximum of both methods be used
 		cols = dict()
 		if line_type == self.current:
 			cols[self.ik11] = 0
 			cols[self.ibsym] = 2
-			cols[self.idc] = 4
-			cols[self.ibasym] = 5
-			cols[self.ip] = 6
+			# # Values no longer obtained from here since these relate to the values obtained by the sum of the
+			# # calculated DC values rather than thevenin impedance as required by G74
+			# #cols[self.idc] = 4
+			# #cols[self.ibasym] = 5
+			cols[self.idc_method1] = 4
+			cols[self.ibasym_method1] = 5
+			cols[self.ip_method1] = 6
 
 			# Expected length of this list of floats
 			expected_length = 7
@@ -128,6 +154,11 @@ class BkdyFileOutput:
 			cols[self.r] = 0
 			cols[self.x] = 1
 			cols[self.v_prefault] = 2
+			# Obtaining the DC, asym and peak values from the second row (THEVENIN ROW) is used since this
+			# aligns with the requirements of the G74 standard rather to use the thevenin impedance
+			cols[self.idc_method2] = 4
+			cols[self.ibasym_method2] = 5
+			cols[self.ip_method2] = 6
 			# Not possible to export this data since in some cases get a result returned which says infinity
 			# #cols[self.idc0] = 4
 			# #cols[self.ibasym0] = 5
@@ -523,9 +554,6 @@ class SHEPD:
 		BkdyFileOutput.ibasym,
 		BkdyFileOutput.idc
 	]
-
-	# TODO: This should be defined as an input but the default position is these values
-	fault_times = [0.01, fault_time]
 
 	# List controls the order of the output columns for the LTDS export
 	output_column_order = [

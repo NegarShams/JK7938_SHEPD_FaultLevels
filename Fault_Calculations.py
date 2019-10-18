@@ -13,41 +13,38 @@ import g74
 import g74.constants as constants
 import os
 import time
-import numpy as np
 import pandas as pd
-
-parent_dir = (
-	r'C:\Users\david\Power Systems Consultants Inc\Jobs - JK7938 - Automated Systems & '
-	r'Data Process Efficiencies\5 Working Docs\PSSE Fault Calculation'
-)
-TEMP_FOLDER = os.path.join(parent_dir, 'temp')
-SAV_NAME = 'SHEPD 2018 LTDS Winter Peak'
-# #SAV_NAME = 'SHEPD 2018 LTDS Winter Peak(ShuntRemoved)'
-# #SAV_NAME = 'SHEPD 2018 LTDS Winter Peak(all_gen_on)'
-PSSE_SAV_CASE = os.path.join(parent_dir, '{}.sav'.format(SAV_NAME))
-PSSE_SAV_CASE_EXPORT = os.path.join(TEMP_FOLDER, '{}.sav'.format(SAV_NAME))
-EXCEL_FILE = os.path.join(parent_dir, '{}.xlsx'.format(SAV_NAME))
 
 # If set to True then will delete all raw results data
 DELETE_RESULTS = False
 
 
-def bkdy_study(sav_case, temp_folder, excel_file, export_sav_case):
+def bkdy_study(
+		sav_case, local_temp_folder, excel_file, export_sav_case,
+		fault_times, buses, local_logger, reload_sav=True
+):
 	"""
 		Run BKDY G74 fault study calculation
 	:param str sav_case:
-	:param str temp_folder:
+	:param str local_temp_folder:
 	:param str excel_file:
 	:param str export_sav_case:
+	:param list fault_times:  Times that fault study is run for
+	:param list buses:  List of busbars to fault
+	:param g74.Logger local_logger:
+	:param bool reload_sav:  Whether original SAV case should be reloaded at the end
 	:return:
 	"""
 	t1 = time.time()
-	temp_bkd_file = os.path.join(temp_folder, 'bkdy_machines{}'.format(constants.PSSE.ext_bkd))
-	fault_times = list(np.arange(0.0, 0.13, 0.01))
+	temp_bkd_file = os.path.join(local_temp_folder, 'bkdy_machines{}'.format(constants.PSSE.ext_bkd))
 
 	# Load SAV case
 	psse = g74.psse.PsseControl()
 	psse.load_data_case(pth_sav=sav_case)
+
+	local_logger.app = psse
+	print('Running from PSSE status is: {}'.format(logger.app.run_in_psse))
+	local_logger.info('Running from PSSE status is: {}'.format(logger.app.run_in_psse))
 
 	t2 = time.time() - t1
 	t1 = time.time()
@@ -73,6 +70,7 @@ def bkdy_study(sav_case, temp_folder, excel_file, export_sav_case):
 	df = bkdy.calculate_fault_currents(
 		fault_times=fault_times, g74_infeed=g74_data,
 		# #buses=buses_to_fault, delete=False
+		buses=buses,
 		delete=True
 	)
 
@@ -86,8 +84,19 @@ def bkdy_study(sav_case, temp_folder, excel_file, export_sav_case):
 	with pd.ExcelWriter(path=excel_file) as writer:
 		df.to_excel(writer, sheet_name='Fault I')
 		df.T.to_excel(writer, sheet_name='Fault I Transposed')
-	logger.info('Excel workbook written to: {}'.format(excel_file))
+	local_logger.info('Excel workbook written to: {}'.format(excel_file))
 	t6 = time.time() - t1
+
+	# Export tabulated data to PSSE
+	# TODO: Decide if this would be useful and how to format
+
+	# Will reload original SAV case if required
+	if reload_sav:
+		psse.load_data_case(pth_sav=pth_sav_case)
+		local_logger.debug('Original sav case: {} reloaded'.format(pth_sav_case))
+
+	# Restore output to defaults
+	psse.change_output(destination=1)
 
 	return t2, t3, t4, t5, t6
 
@@ -95,14 +104,36 @@ def bkdy_study(sav_case, temp_folder, excel_file, export_sav_case):
 if __name__ == '__main__':
 	# Create logger
 	uid = 'BKDY_{}'.format(time.strftime('%Y%m%d_%H%M%S'))
-	logger = g74.Logger(pth_logs=TEMP_FOLDER, uid=uid, debug=constants.DEBUG_MODE)
+	# Check temp folder exists and if not create
+	script_path = os.path.realpath(__file__)
+	script_folder = os.path.dirname(script_path)
+	temp_folder = os.path.join(script_folder, 'temp')
+	if not os.path.exists(temp_folder):
+		os.mkdir(temp_folder)
+	logger = g74.Logger(pth_logs=temp_folder, uid=uid, debug=constants.DEBUG_MODE)
 
 	t0 = time.time()
 	# Run main study
 	logger.info('Study started')
+	# Load user interface
+	gui = g74.gui.MainGUI()
+
+	# Whether SAV case should be reloaded
+	reload_sav_case = gui.bo_reload_sav.get()
+
+	# TODO: Get SAV case from GUI and also initially save it so that it can be reloaded on completion
+
+	pth_sav_case = gui.sav_case
+	faults = gui.fault_times
+	target_file = gui.target_file
+	sav_name, _ = os.path.splitext(os.path.basename(pth_sav_case))
+	pth_sav_case_export = os.path.join(temp_folder, '{}.sav'.format(sav_name))
+	buses_to_fault = gui.selected_busbars
+
 	times = bkdy_study(
-		sav_case=PSSE_SAV_CASE, temp_folder=TEMP_FOLDER, excel_file=EXCEL_FILE,
-		export_sav_case=PSSE_SAV_CASE_EXPORT
+		sav_case=pth_sav_case, local_temp_folder=temp_folder, excel_file=target_file,
+		export_sav_case=pth_sav_case_export, fault_times=faults, buses=buses_to_fault,
+		reload_sav=reload_sav_case, local_logger=logger
 	)
 
 	logger.info('Took {:.2f} seconds to initialise PSSE'.format(times[0]))

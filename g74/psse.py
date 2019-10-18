@@ -120,26 +120,11 @@ class InitialisePsspy:
 				raise RuntimeError('Unable to initialise PSSE, error code {} returned'.format(error_code))
 			else:
 				self.psse = True
-				# Disable screen output based on PSSE constants
-				self.change_output(destination=constants.PSSE.output[constants.DEBUG_MODE])
+
+				# ## Disable screen output based on PSSE constants
+				# #self.change_output(destination=constants.PSSE.output[constants.DEBUG_MODE])
 
 		return self.psse
-
-	def change_output(self, destination):
-		"""
-			Function disables the reporting output from PSSE
-		:param int destination:  Target destination, default is to disable which sets it to 6
-		:return None:
-		"""
-		print('PSSE output set to: {}'.format(destination))
-
-		# Disables all PSSE output
-		_ = self.psspy.report_output(islct=destination)
-		_ = self.psspy.progress_output(islct=destination)
-		_ = self.psspy.alert_output(islct=destination)
-		_ = self.psspy.prompt_output(islct=destination)
-
-		return None
 
 
 class BusData:
@@ -565,6 +550,51 @@ class PsseControl:
 		# fault levels
 		self.bkdy_issue = False
 
+		# Boolean value used to determine whether output should be set to PSSE or Python
+		self.run_in_psse = None
+
+	def change_output(self, destination):
+		"""
+			Function disables the reporting output from PSSE
+		:param int destination:  Target destination, default is to disable which sets it to 6
+		:return None:
+		"""
+		self.logger.debug('PSSE general output changed to destination = {} (1=default, 6=none)'.format(destination))
+		# Disables all PSSE output
+		_ = psspy.report_output(islct=destination)
+		_ = psspy.progress_output(islct=destination)
+		_ = psspy.alert_output(islct=destination)
+		_ = psspy.prompt_output(islct=destination)
+
+		print('PSSE output set to: {} and progress output set to: {}'.format(destination, destination))
+
+		return None
+
+	def toggle_progress_output(self, destination):
+		"""
+			Sets progress output to the destination folder unless running in DEBUG mode
+		:param int destination:
+		:return None:
+		"""
+		progress_destination = min(destination, constants.PSSE.output[constants.DEBUG_MODE])
+		_ = psspy.progress_output(islct=progress_destination)
+
+	def running_from_psse(self):
+		"""
+			Determine if running from PSSE or Python
+		:return None:
+		"""
+		if self.run_in_psse is None:
+			# Determine if this script is being run from PSSE or plain Python.
+			full_path_executable = sys.executable
+			# Remove the folder path and keep only the executable file (in lower case).
+			executable = os.path.basename(full_path_executable).lower()
+
+			self.run_in_psse = True
+			if executable in ['python.exe', 'pythonw.exe']:
+				# If the executable was one of the above, it is a Python session.
+				self.run_in_psse = False
+
 	def load_data_case(self, pth_sav=None):
 		"""
 			Load the study case that PSSE should be working with
@@ -582,6 +612,12 @@ class PsseControl:
 			else:
 				self.logger.critical('Unable to initialise PSSE')
 				raise ImportError('PSSE Initialisation Error')
+
+		# Determine whether being run from PSSE or being run from Python
+		self.running_from_psse()
+
+		# Set PSSE output accordingly
+		self.change_output(destination=constants.PSSE.output[constants.DEBUG_MODE])
 
 		# Allows case to be reloaded
 		if pth_sav is None:
@@ -1028,6 +1064,16 @@ class PsseControl:
 
 		return sid
 
+	def write_data_to_psse_report(self, df):
+		"""
+			Function will export the data in a tabulated for to the PSSE window in exactly the same structure as the
+			DataFrame
+		:param pd.DataFrame df:
+		:return None:
+		"""
+		# Change report output to the GUI
+		_ = psspy.report_output(islct=1)
+
 
 class BkdyFaultStudy:
 	"""
@@ -1205,19 +1251,9 @@ class BkdyFaultStudy:
 		# Calculate the fault impedance values for the initial time of 0.0
 		g74_infeed.calculate_machine_impedance(fault_time=0.0, update=True)
 
-		# Produce name of results files for initial run
-		current_script_path = os.path.dirname(os.path.realpath(__file__))
-		initial_fault_files = [
-			os.path.join(current_script_path, 'fault_ik_init{:.2f}{}'.format(x, constants.General.ext_csv))
-			for x in fault_times
-		]
-		ac_decrement_files = [
-			os.path.join(current_script_path, 'fault_ik_decr{:.2f}{}'.format(x, constants.General.ext_csv))
-			for x in fault_times
-		]
 		# Initial fault must be carried out at 0.0 ms to get peak and Ik'' value
 		if constants.G74.min_fault_time not in fault_times:
-			fault_times.insert(0, constants.G74.min_fault_time)
+			fault_times.append(constants.G74.min_fault_time)
 			self.logger.warning(
 				(
 					'{:.2f} fault time missing from inputs.  This must be included to determine the '
@@ -1227,7 +1263,7 @@ class BkdyFaultStudy:
 			)
 
 		if constants.G74.peak_fault_time not in fault_times:
-			fault_times.insert(0, constants.G74.peak_fault_time)
+			fault_times.append(constants.G74.peak_fault_time)
 			self.logger.warning(
 				(
 					'{:.2f} fault time missing from inputs.  This must be included to determine the '
@@ -1238,6 +1274,17 @@ class BkdyFaultStudy:
 
 		# Sort list of times into ascending order
 		fault_times.sort()
+
+		# Produce name of results files for initial run
+		current_script_path = os.path.dirname(os.path.realpath(__file__))
+		initial_fault_files = [
+			os.path.join(current_script_path, 'fault_ik_init{:.2f}{}'.format(x, constants.General.ext_csv))
+			for x in fault_times
+		]
+		ac_decrement_files = [
+			os.path.join(current_script_path, 'fault_ik_decr{:.2f}{}'.format(x, constants.General.ext_csv))
+			for x in fault_times
+		]
 
 		# Define bus subsystem based on buses
 		if buses:
@@ -1310,9 +1357,9 @@ class BkdyFaultStudy:
 			else:
 				df_temp = df_section[time][constants.SHEPD.cols_for_other_fault_time]
 
-			# Re-calculate asymmetrical fault current
+			# Re-calculate asymmetrical fault current based on Iasym = sqrt(DC**2+((sqrt(2)SYM)**2)/2)
 			df_temp[constants.BkdyFileOutput.ibasym] = (
-				df_temp[constants.BkdyFileOutput.ibsym].pow(2) +
+				df_temp[constants.BkdyFileOutput.ibsym].mul(2**0.5).pow(2).div(2) +
 				df_temp[constants.BkdyFileOutput.idc].pow(2)
 			).pow(0.5)
 
@@ -1346,6 +1393,7 @@ class BkdyFaultStudy:
 		df.index.name = c.bus_number
 
 		return df
+
 
 # TODO: To be completed
 class FormatResults:
@@ -1460,8 +1508,6 @@ class LoadData:
 
 
 # TODO: Process output results to extract relevant values (input option to select values?)
-
-
 class BkdyFile:
 	def __init__(self, output_file, fault_time):
 		"""
@@ -1536,13 +1582,21 @@ class BkdyFile:
 
 					# Process results into DataFrame
 					for name, col_num in col_nums.iteritems():
-						self.df.loc[bus, name] = impedance[col_num]
+						if col_num > 3:
+							self.df.loc[bus, name] = impedance[col_num] / c_bkdy_file.num_to_kA
+						else:
+							self.df.loc[bus, name] = impedance[col_num]
 
 					# Reset bus since finished processing this busbar
 					bus = int()
 
 		# Set name for DataFrame
 		self.df.name = constants.BkdyFileOutput.start
+
+		# Determine maximum values for DC and Peak current
+		# TODO: Review if this is best method and not overly pessimistic with requirements of G74
+		self.df[c_bkdy_file.ip] = self.df[[c_bkdy_file.ip_method1, c_bkdy_file.ip_method2]].max(axis=1)
+		self.df[c_bkdy_file.idc] = self.df[[c_bkdy_file.idc_method1, c_bkdy_file.idc_method2]].max(axis=1)
 
 		# Tidy up by removing file and updating status
 		if delete:

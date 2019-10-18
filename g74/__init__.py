@@ -12,6 +12,8 @@
 # Package imports
 import g74.constants as constants
 import g74.psse as psse
+import g74.file_handling as file_handling
+import g74.gui as gui
 
 # Generic Imports
 import logging
@@ -75,7 +77,7 @@ class Logger:
 		:param str pth_logs:  Path to where all log files will be stored
 		:param str uid:  Unique identifier for log files
 		:param bool debug:  True / False on whether running in debug mode or not
-		:param powerfactory app: (optional) - If not None then will use this to provide updates to powerfactory
+		:param g74.psse.PsseControl() app: (optional) - If not None then will use this to provide updates to powerfactory
 		"""
 		# Constants
 		self.log_constants = constants.Logging
@@ -251,31 +253,59 @@ class Logger:
 
 		return handler
 
+	def progress_output(self):
+		"""
+			Function toggles the GUI progress output if running in PSSE
+		:return None:
+		"""
+		if self.app is not None:
+			if self.app.run_in_psse:
+				self.app.toggle_progress_output(destination=1)
+		return None
+
+	def no_progress_output(self):
+		"""
+			Function toggles the GUI progress output if running in PSSE
+		:return None:
+		"""
+		if self.app is not None:
+			if self.app.run_in_psse:
+				self.app.toggle_progress_output(destination=6)
+		return None
+
 	def debug(self, msg):
 		""" Handler for debug messages """
 		# Debug messages only written to logger
+		self.progress_output()
 		self.logger.debug(msg)
+		self.no_progress_output()
 
 	def info(self, msg):
 		""" Handler for info messages """
 		# # Only print output to powerfactory if it has been passed to logger
 		# #if self.app and self.pf_executed:
 		# #	self.app.PrintPlain(msg)
+		self.progress_output()
 		self.logger.info(msg)
+		self.no_progress_output()
 
 	def warning(self, msg):
 		""" Handler for warning messages """
-		# #self.warning_count += 1
+		self.warning_count += 1
 		# #if self.app and self.pf_executed:
 		# #	self.app.PrintWarn(msg)
+		self.progress_output()
 		self.logger.warning(msg)
+		self.no_progress_output()
 
 	def error(self, msg):
 		""" Handler for warning messages """
-		# #self.error_count += 1
+		self.error_count += 1
 		# #if self.app and self.pf_executed:
 		# #	self.app.PrintError(msg)
+		self.progress_output()
 		self.logger.error(msg)
+		self.no_progress_output()
 
 	def critical(self, msg):
 		""" Critical error has occurred """
@@ -284,7 +314,9 @@ class Logger:
 		caller = inspect.stack()[1][3]
 		self.critical_count += 1
 
+		self.progress_output()
 		self.logger.critical('function <{}> reported {}'.format(caller, msg))
+		self.no_progress_output()
 
 	def flush(self):
 		""" Flush all loggers to file before continuing """
