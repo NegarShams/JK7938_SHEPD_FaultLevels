@@ -41,6 +41,15 @@ class TestPsseInitialise(unittest.TestCase):
 	"""
 		Functions to check that PSSE import and initialisation is possible
 	"""
+
+	@classmethod
+	def setUpClass(cls):
+		"""
+			Load the SAV case into PSSE for further testing
+		"""
+		# Initialise logger
+		cls.logger = g74.Logger(pth_logs=TEST_LOGS, uid='TestPSSEInitialise', debug=g74.constants.DEBUG_MODE)
+
 	def test_psse32_psspy_import_fail(self):
 		"""
 			Test that PSSE version 32 cannot be initialised because it is not installed
@@ -48,14 +57,17 @@ class TestPsseInitialise(unittest.TestCase):
 		"""
 		sys.path = original_sys
 		os.environ['PATH'] = original_environ
-		self.psse = test_module.InitialisePsspy(psse_version=32)
-		self.assertIsNone(self.psse.psspy)
+		# #self.psse = test_module.InitialisePsspy(psse_version=32)
+		self.assertRaises(ImportError, test_module.InitialisePsspy, 32)
+		# #self.assertIsNone(self.psse.psspy)
 
 	def test_psse33_psspy_import_success(self):
 		"""
 			Test that PSSE version 33 can be initialised
 		:return:
 		"""
+		sys.path = original_sys
+		os.environ['PATH'] = original_environ
 		self.psse = test_module.InitialisePsspy(psse_version=33)
 		self.assertIsNotNone(self.psse.psspy)
 
@@ -64,6 +76,8 @@ class TestPsseInitialise(unittest.TestCase):
 			Test that PSSE version 34 can be initialised
 		:return:
 		"""
+		sys.path = original_sys
+		os.environ['PATH'] = original_environ
 		self.psse = test_module.InitialisePsspy(psse_version=34)
 		self.assertIsNotNone(self.psse.psspy)
 
@@ -76,9 +90,22 @@ class TestPsseInitialise(unittest.TestCase):
 			Tidy up by removing variables and paths that are not necessary
 		:return:
 		"""
-		sys.path.remove(self.psse.psse_py_path)
-		os.environ['PATH'] = os.environ['PATH'].strip(self.psse.psse_os_path)
-		os.environ['PATH'] = os.environ['PATH'].strip(self.psse.psse_py_path)
+		sys.path = original_sys
+		os.environ['PATH'] = original_environ
+
+	@classmethod
+	def tearDownClass(cls):
+		# Delete log files created by logger
+		if DELETE_LOG_FILES:
+			paths = [
+				cls.logger.pth_debug_log,
+				cls.logger.pth_progress_log,
+				cls.logger.pth_error_log
+			]
+			del cls.logger
+			for pth in paths:
+				if os.path.exists(pth):
+					os.remove(pth)
 
 
 class TestPsseControl(unittest.TestCase):

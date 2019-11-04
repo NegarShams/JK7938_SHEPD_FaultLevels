@@ -9,11 +9,30 @@
 #######################################################################################################################
 """
 
+# This import needs to be run first to ensure that the script path is defined correctly in which some other
+# modules will be located (numpy and pandas in particular) that are required as part of this script package
+import os
+import sys
+script_path = os.path.realpath(__file__)
+script_folder = os.path.dirname(script_path)
+sys.path.append(script_folder)
+
 import g74
 import g74.constants as constants
-import os
 import time
-import pandas as pd
+try:
+	import pandas as pd
+except ImportError, err:
+	# TODO: Write function that will go and install the missing files using pip and try again
+	raise ImportError(
+		(
+			'Unable to import pandas most likely because it has not been installed correctly within the'
+			'folder that constains this script!\n'
+			'It should be installed manually using <pip> and the appropriate <.whl> using the command:\n'
+			'\t<pip install --ignore-installed --no-deps --target="{}" "{}\<name of file>.whl"\n'
+			'The full traceback was as follows:\n{}'
+		).format(script_folder, script_folder, err)
+	)
 
 # If set to True then will delete all raw results data
 DELETE_RESULTS = False
@@ -105,8 +124,6 @@ if __name__ == '__main__':
 	# Create logger
 	uid = 'BKDY_{}'.format(time.strftime('%Y%m%d_%H%M%S'))
 	# Check temp folder exists and if not create
-	script_path = os.path.realpath(__file__)
-	script_folder = os.path.dirname(script_path)
 	temp_folder = os.path.join(script_folder, 'temp')
 	if not os.path.exists(temp_folder):
 		os.mkdir(temp_folder)

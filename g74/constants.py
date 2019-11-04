@@ -183,9 +183,6 @@ class PSSE:
 	"""
 		Class to hold all of the constants associated with PSSE initialisation
 	"""
-	# default version = 33
-	version = 33
-
 	# Setting on whether PSSE should output results based on whether operating in DEBUG_MODE or not
 	output = {True: 1, False: 6}
 	file_output = 2
@@ -215,60 +212,29 @@ class PSSE:
 	# Minimum fault time that can be considered (in seconds)
 	min_fault_time = 0.0001
 
-	def __init__(self):
-		self.psse_py_path = str()
-		self.psse_os_path = str()
+	# Dependant on whether running in PSSE 33 or 34
+	if 'PROGRAMFILES(X86)' in os.environ:
+		program_files_directory = r'C:\Program Files (x86)\PTI'
+	else:
+		program_files_directory = r'C:\Program Files\PTI'
 
-	def get_psse_path(self, psse_version, reset=False):
-		"""
-			Function returns the PSSE path specific to this version of psse
-		:param int psse_version:
-		:param bool reset: (optional=False) - If set to True then class is reset with a new psse_version
-		:return str self.psse_path:
-		"""
-		if self.psse_py_path and self.psse_os_path and not reset:
-			return self.psse_py_path, self.psse_os_path
+	# PSSE version dependant paths
+	psse_paths = {
+		32: 'PSSE32\PSSBIN',
+		33: 'PSSE33\PSSBIN',
+		34: 'PSSE34\PSSPY27'
+	}
+	os_paths = {
+		32: 'PSSE32\PSSBIN',
+		33: 'PSSE33\PSSBIN',
+		34: 'PSSE34\PSSBIN'
+	}
 
-		if 'PROGRAMFILES(X86)' in os.environ:
-			program_files_directory = r'C:\Program Files (x86)\PTI'
-		else:
-			program_files_directory = r'C:\Program Files\PTI'
-
-		psse_paths = {
-			32: 'PSSE32\PSSBIN',
-			33: 'PSSE33\PSSBIN',
-			34: 'PSSE34\PSSPY27'
-		}
-		os_paths = {
-			32: 'PSSE32\PSSBIN',
-			33: 'PSSE33\PSSBIN',
-			34: 'PSSE34\PSSBIN'
-		}
-		self.psse_py_path = os.path.join(program_files_directory, psse_paths[psse_version])
-		self.psse_os_path = os.path.join(program_files_directory, os_paths[psse_version])
-		return self.psse_py_path, self.psse_os_path
-
-	def find_psspy(self, start_directory=r'C:'):
-		"""
-			Function to search entire directory and find PSSE installation
-
-		"""
-		# Clear variables
-		self.psse_py_path = str()
-		self.psse_os_path = str()
-
-		psspy_to_find = "psspy.pyc"
-		psse_to_find = "psse.bat"
-		for root, dirs, files in os.walk(start_directory):  # Walks through all subdirectories searching for file
-			if psspy_to_find in files:
-				self.psse_py_path = root
-			elif psse_to_find in files:
-				self.psse_os_path = root
-
-			if self.psse_py_path and self.psse_os_path:
-				break
-
-		return self.psse_py_path, self.psse_os_path
+	# Relevant filenames for PSSPY and PSSE when needing to search for them
+	psspy_to_find = "psspy.pyc"
+	pssarrays_to_find = "pssarrays.pyc"
+	psse_to_find = "psse.bat"
+	default_install_directory = r'C:\ProgramData\Microsoft\AppV\Client\Integration'
 
 
 class Loads:
@@ -507,6 +473,9 @@ class SHEPD:
 
 	reactor_step_change_limit = 0.03
 	cont_step_change_limit = 0.1
+
+	# SHEPD has a custom PSSE path installation which is defined here:
+	psse_path = r'C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Siemens PTI\PSSE 33'
 
 	# This is a threshold value, circuits with ratings less than this are reported and ignored
 	rating_threshold = 0

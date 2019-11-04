@@ -19,6 +19,11 @@ import logging
 import pandas as pd
 import re
 import math
+import time
+import string
+
+# Version of PSSE that will be initialised
+DEFAULT_PSSE_VERSION = 33
 
 
 def extract_values(line, expected_length=0):
@@ -68,16 +73,79 @@ class InitialisePsspy:
 		Class to deal with the initialising of PSSE by checking the correct directory is being referenced and has been
 		added to the system path and then attempts to initialise it
 	"""
-	def __init__(self, psse_version=constants.PSSE.version):
+	def __init__(self, psse_version=DEFAULT_PSSE_VERSION):
 		"""
 			Initialise the paths and checks that import psspy works
 		:param int psse_version: (optional=34)
 		"""
 
 		self.psse = False
+		self.c = constants.PSSE
+		self.logger = logging.getLogger(constants.Logging.logger_name)
+		self.psse_version = psse_version
 
-		# Get PSSE path
-		self.psse_py_path, self.psse_os_path = constants.PSSE().get_psse_path(psse_version=psse_version)
+		# Set PSSE paths for defined PSSE version
+		self.psse_py_path = str()
+		self.psse_os_path = str()
+		self.set_psse_path()
+
+		global psspy
+		global pssarrays
+		try:
+			# Import psspy used for manipulating PSSE
+			import psspy
+			psspy = reload(psspy)
+			self.psspy = psspy
+
+		except ImportError:
+			self.psspy = None
+			self.logger.error(
+				(
+					'Unable to initialise PSSPY which is thought to be installed in the directory {}, suggest '
+					'checking for {} in this directory'
+				).format(self.psse_py_path, self.c.psspy_to_find)
+			)
+			raise ImportError('Unable to initialise PSSPY and therefore cannot run PSSE studies')
+
+		# TODO: Better error handling / importing to only include this when needed
+		try:
+			# Import pssarrays used for data extraction from PSSE
+			import pssarrays
+			pssarrays = reload(pssarrays)
+			self.pssarrays = pssarrays
+		except ImportError:
+			self.pssarrays = None
+			self.logger.error(
+				(
+					'Unable to initialise PSSARRAYS which is used to process IEC results and thought to be '
+					'installed in the directory {}, suggest checking for {} in this directory'
+				).format(self.psse_py_path, self.c.pssarrays_to_find)
+			)
+			raise ImportError('Unable to initialise PSSARRAYS used for IEC fault current data extraction')
+
+	def set_psse_path(self, reset=False):
+		"""
+			Function returns the PSSE path specific to this version of psse
+		:param bool reset: (optional=False) - If set to True then class is reset with a new psse_version
+		:return str self.psse_path:
+		"""
+		self.logger.debug('Adding PSSE paths to windows environment')
+		if self.psse_py_path and self.psse_os_path and not reset:
+			return self.psse_py_path, self.psse_os_path
+
+		# Produce directory for standard installation
+		self.psse_py_path = os.path.join(self.c.program_files_directory, self.c.psse_paths[self.psse_version])
+		self.psse_os_path = os.path.join(self.c.program_files_directory, self.c.os_paths[self.psse_version])
+		
+		# Check if these paths actually exist and if not then carry out a search for PSSE
+		if not os.path.exists(self.psse_py_path) and not os.path.exists(self.psse_os_path):
+			t0 = time.time()
+			self.logger.info('PSSE not installed in default directories and so searching for installed location')
+			self.psse_py_path, self.psse_os_path = self.find_psspy(start_directory=self.c.default_install_directory)
+			if not self.psse_py_path or not self.psse_os_path:
+				self.logger.error('Unable to find PSSE installation, will attempt to continue but likely to fail')
+			self.logger.info('Took {:.2f} seconds to find PSSE'.format(time.time()-t0))
+
 		# Add to system path if not already there
 		if self.psse_py_path not in sys.path:
 			sys.path.append(self.psse_py_path)
@@ -87,24 +155,43 @@ class InitialisePsspy:
 
 		if self.psse_py_path not in os.environ['PATH']:
 			os.environ['PATH'] += ';{}'.format(self.psse_py_path)
+		
+		return self.psse_py_path, self.psse_os_path
 
-		global psspy
-		global pssarrays
-		try:
-			# Import psspy used for manipulating PSSE
-			import psspy
-			psspy = reload(psspy)
-			self.psspy = psspy
-			# Import pssarrays used for data extraction from PSSE
-			import pssarrays
-			pssarrays = reload(pssarrays)
-			self.pssarrays = pssarrays
-			# #import pssarrays
-			# #self.pssarrays = pssarrays
-		except ImportError:
-			self.psspy = None
-			# #self.pssarrays = None
+	def find_psspy(self, start_directory='C:\\'):
+		"""
+			Function to search entire directory and find PSSE installation
+		:param str start_directory:  Directory from which to start the search
+		:return (str, str) (self.psse_py_path, self.psse_os_path):  Returns that paths to PSSE python and executable
+		"""
+		# Initialise variables
+		psse_py_path = str()
+		psse_os_path = str()
 
+		# Produce list of drives to search
+		# #drives = list()
+		# #for letter in string.ascii_uppercase:
+		# #	drive = '{}:\\'.format(letter)
+		# #	if os.path.isdir(drive):
+		# #		drives.append(drive)
+
+		# Executables that relate to PSSE
+		# #for drive in drives:
+		# #	self.logger.debug('Searching drive {}'.format(drive))
+		for root, dirs, files in os.walk(start_directory):  # Walks through all subdirectories searching for file
+			[dirs.remove(d) for d in list(dirs) if d.startswith('$') or d.startswith('.')]
+			# TODO: Need different way to confirm which version of PSSE is installed, currently just assumes the
+			# TODO: relevant version but yet script has not been tested with PSSE v33+
+			if self.c.psspy_to_find in files:
+				psse_py_path = root
+			elif self.c.psse_to_find in files:
+				psse_os_path = root
+
+			if psse_py_path and psse_os_path:
+				break
+
+		return psse_py_path, psse_os_path
+	
 	def initialise_psse(self):
 		"""
 			Initialise PSSE
@@ -576,6 +663,7 @@ class PsseControl:
 		:param int destination:
 		:return None:
 		"""
+		self.logger.debug('Process output changes to {}'.format(destination))
 		progress_destination = min(destination, constants.PSSE.output[constants.DEBUG_MODE])
 		_ = psspy.progress_output(islct=progress_destination)
 
@@ -1006,7 +1094,6 @@ class PsseControl:
 		"""
 		# PSSE functions
 		func_subsys_init = psspy.bsysinit
-		func_subsys = psspy.bsys
 		func_subsys_add = psspy.bsyso
 
 		num_buses = len(buses)
@@ -1072,6 +1159,10 @@ class PsseControl:
 		:return None:
 		"""
 		# Change report output to the GUI
+		# TODO: This script has not been completed
+		self.logger.debug('Writing results to PSSE report window')
+		if df.empty:
+			raise ValueError('DataFrame is empty, nothing to write')
 		_ = psspy.report_output(islct=1)
 
 
@@ -1241,7 +1332,6 @@ class BkdyFaultStudy:
 			Two iterations of the fault current calculations are performed, one for every timestep with machines
 			initialised for time == 0ms and then for every timestep with machine parameters recalculated.
 		:param list fault_times:  List of the fault times that should be considered
-		:param list names: List of names to be associated with each fault time
 		:param G74FaultInfeed() g74_infeed:  Reference to the g74 handle so that machine parameters can be updated
 		:param list buses: (optional) List of busbars to be faulted if empty list then all busbars faulted
 		:param bool delete: (optional=True) - Will delete the original bkdy output files
@@ -1276,6 +1366,7 @@ class BkdyFaultStudy:
 		fault_times.sort()
 
 		# Produce name of results files for initial run
+		# TODO: Change this to use the temporary folder rather than script folder (same folder as BKDY and log file outputs)
 		current_script_path = os.path.dirname(os.path.realpath(__file__))
 		initial_fault_files = [
 			os.path.join(current_script_path, 'fault_ik_init{:.2f}{}'.format(x, constants.General.ext_csv))
@@ -1298,25 +1389,15 @@ class BkdyFaultStudy:
 
 		# Loop through fault current studies producing fault files initially for ik''
 		for fault, file_path in zip(fault_times, initial_fault_files):
-			# TODO: Confirm that this is actually required
-			# If fault time is set to 0.0 then not possible and something slightly bigger is necessary
-			# #if fault == 0.0:
-			# #	fault = constants.PSSE.min_fault_time
 			# Run fault study for this result
 			# Fault is given name value for subsequent processing
 			self.main(name=fault, output_file=file_path, fault_time=fault)
-			self.psse.save_data_case(pth_sav=r'C:\Users\david\PycharmProjects\JK7938_SHEPD_FaultLevels\g74\test_files\TEST.sav')
 
 		# Process results from initial fault into a DataFrame and delete if necessary
 		df = self.combine_bkdy_output(delete=delete)
 
 		# Loop through fault current studies producing fault files initially for ik(t)
 		for fault, file_path in zip(fault_times, ac_decrement_files):
-			# TODO: Confirm that this is actually required
-			# If fault time is set to 0.0 then not possible and something slightly bigger is necessary
-			# #if fault == 0.0:
-			# #	fault = constants.PSSE.min_fault_time
-
 			# Recalculate machine parameters based on fault time
 			g74_infeed.calculate_machine_impedance(fault_time=fault, update=True)
 			# Run fault study for this result
@@ -1325,7 +1406,7 @@ class BkdyFaultStudy:
 		# Process results from ik(t) fault into a DataFrame and delete results files if necessary
 		df_decr = self.combine_bkdy_output(delete=delete)
 
-		# Update ik(t) values in initial calculation with values from second dataframe
+		# Update ik(t) values in initial calculation with values from second DataFrame
 		df.update(df_decr.xs(constants.BkdyFileOutput.ibsym, axis=1, level=1, drop_level=False))
 
 		df = self.process_combined_results(df)
@@ -1340,22 +1421,23 @@ class BkdyFaultStudy:
 		:return:
 		"""
 		#
+		self.logger.debug('Combining results')
 		dfs = dict()
 		# TODO: How to extract section of DataFrame at this point
-		for time, df_section in df.groupby(level=0, axis=1):
+		for fault_time, df_section in df.groupby(level=0, axis=1):
 			# Extract relevant sections
-			if round(time, 3) == constants.G74.min_fault_time:
-				df_temp = df_section[time][constants.SHEPD.cols_for_min_fault_time]
+			if round(fault_time, 3) == constants.G74.min_fault_time:
+				df_temp = df_section[fault_time][constants.SHEPD.cols_for_min_fault_time]
 				# Calculate X/R value
 				df_temp[constants.General.x_r] = (
 					df_temp[constants.BkdyFileOutput.x].div(
 						df_temp[constants.BkdyFileOutput.r]
 					)
 				)
-			elif round(time, 3) == constants.G74.peak_fault_time:
-				df_temp = df_section[time][constants.SHEPD.cols_for_peak_fault_time]
+			elif round(fault_time, 3) == constants.G74.peak_fault_time:
+				df_temp = df_section[fault_time][constants.SHEPD.cols_for_peak_fault_time]
 			else:
-				df_temp = df_section[time][constants.SHEPD.cols_for_other_fault_time]
+				df_temp = df_section[fault_time][constants.SHEPD.cols_for_other_fault_time]
 
 			# Re-calculate asymmetrical fault current based on Iasym = sqrt(DC**2+((sqrt(2)SYM)**2)/2)
 			df_temp[constants.BkdyFileOutput.ibasym] = (
@@ -1364,7 +1446,7 @@ class BkdyFaultStudy:
 			).pow(0.5)
 
 			# Append to list
-			dfs[time] = df_temp
+			dfs[fault_time] = df_temp
 
 		df = pd.concat(dfs.values(), axis=1, keys=dfs.keys())
 		df.sort_index(axis=1, level=0, inplace=True, ascending=True)
@@ -1376,6 +1458,7 @@ class BkdyFaultStudy:
 		:param pd.DataFrame df:
 		:return:
 		"""
+		self.logger.debug('Adding busbar data to DataFrame')
 		# Constants
 		c = constants.General
 		# Get busbar data from PSSE model

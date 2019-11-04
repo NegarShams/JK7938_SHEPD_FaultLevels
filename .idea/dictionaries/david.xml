@@ -8,8 +8,10 @@
       <w>colstring</w>
       <w>conl</w>
       <w>cplx</w>
+      <w>decr</w>
       <w>exname</w>
       <w>fromnumber</w>
+      <w>iasym</w>
       <w>ibasym</w>
       <w>ibsym</w>
       <w>idev</w>
@@ -23,6 +25,7 @@
       <w>ordr</w>
       <w>prefault</w>
       <w>pssarrays</w>
+      <w>pythonw</w>
       <w>raphson</w>
       <w>reactance</w>
       <w>rneg</w>
@@ -31,9 +34,11 @@
       <w>rzero</w>
       <w>shepd</w>
       <w>shetl</w>
+      <w>sqrt</w>
       <w>subsys</w>
       <w>sysmva</w>
       <w>thevenin</w>
+      <w>timestep</w>
       <w>tonumber</w>
       <w>unittesting</w>
       <w>xarray</w>
