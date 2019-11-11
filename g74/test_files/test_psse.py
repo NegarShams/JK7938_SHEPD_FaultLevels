@@ -625,7 +625,7 @@ class TestPsseLoadData(unittest.TestCase):
 		# TODO: Will need to be revised if improved calculation for 11kV equivalents
 		self.assertAlmostEqual(
 			df.loc[11, constants.Machines.xsubtr],
-			constants.G74.x11,
+			constants.G74.x11-constants.G74.tx_x,
 			places=4
 		)
 
