@@ -9,18 +9,27 @@
 #######################################################################################################################
 """
 
+# Add local_packages in parent to path
+# Generic Imports
+import os
+import sys
+# TODO: May be better to actually embed this within G74
+local_packages = os.path.join(os.path.dirname(__file__), '..', 'local_packages')
+# Insert local_packages to start of path for fault studies
+sys.path.insert(0, local_packages)
+
+import logging
+import logging.handlers
+import time
+import inspect
+
 # Package imports
 import g74.constants as constants
 import g74.psse as psse
 import g74.file_handling as file_handling
 import g74.gui as gui
 
-# Generic Imports
-import logging
-import logging.handlers
-import os
-import time
-import inspect
+
 
 # Meta Data
 __author__ = 'David Mills'

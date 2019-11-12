@@ -12,28 +12,8 @@
 # This import needs to be run first to ensure that the script path is defined correctly in which some other
 # modules will be located (numpy and pandas in particular) that are required as part of this script package
 import os
-import sys
 script_path = os.path.realpath(__file__)
 script_folder = os.path.dirname(script_path)
-
-[sys.path.remove(x) for x in sys.path if 'anaconda' in x]
-paths_to_add = [
-	script_folder,
-	'C:\\WINDOWS\\SYSTEM32\\python27.zip',
-	'C:\\Python27\\DLLs',
-	'C:\\Python27\\lib',
-	'C:\\Python27\\lib\\plat-win',
-	'C:\\Python27\\lib\\lib-tk',
-	'C:\\Python27',
-	'C:\\Python27\\lib\\site-packages',
-	'C:\\Python27\\lib\\site-packages\\psse_env_manager',
-	'C:\\Python27\\lib\\site-packages\\win32',
-	'C:\\Python27\\lib\\site-packages\\win32\\lib',
-	'C:\\Python27\\lib\\site-packages\\Pythonwin',
-	'C:\\Python27\\lib\\site-packages\\wx-3.0-msw'
-]
-for pth in paths_to_add:
-	sys.path.append(pth)
 
 import g74
 import g74.constants as constants

@@ -17,6 +17,7 @@ import sys
 import os
 import logging
 import pandas as pd
+import numpy as np
 import re
 import math
 import time
@@ -44,7 +45,20 @@ def extract_values(line, expected_length=0):
 	# reg find all returns a list of lists showing which of the search items matched
 	data = reg_search.findall(line)
 	# Convert into a flat list, removing the blank strings and converting to floats
-	extracted = [float(item) for sublist in data for item in sublist if item != '']
+	# #extracted = [float(item) for sublist in data for item in sublist if item != '']
+	# Convert into a flat list, removing the blank strings and converting to floats
+	extracted = list()
+	# TODO: Looping through multiple loops here, maybe better way to return from REGEX search
+	value = np.nan
+	for group in data:
+		if '*' * 9 in group:
+			value = 0.0
+		else:
+			# Extract single value and convert to flat list
+			for item in group:
+				if item != '':
+					value = float(item)
+		extracted.append(value)
 
 	# Error processing to check if lengths as expected
 	if (
@@ -1829,7 +1843,7 @@ class G74FaultInfeed:
 									c.xsubtr,
 									c.xtrans,
 									c.xsynch
-								)] - self.df_machines.loc[:, c.tx_x]
+								)].subtract(self.df_machines.loc[:, c.tx_x], axis=0)
 
 		self.logger.debug(
 			(

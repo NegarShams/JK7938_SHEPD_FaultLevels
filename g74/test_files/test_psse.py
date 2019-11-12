@@ -9,15 +9,16 @@
 #######################################################################################################################
 """
 
+import g74
+import g74.psse as test_module
+import g74.constants as constants
+
 import unittest
 import os
 import sys
 import pandas as pd
 import numpy as np
 import math
-import g74
-import g74.psse as test_module
-import g74.constants as constants
 
 TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
 TEST_LOGS = os.path.join(TESTS_DIR, 'logs')
@@ -690,8 +691,11 @@ class TestPsseLoadData(unittest.TestCase):
 		expected_fault_infeed_pu = list()
 		for fault_time in fault_times_to_test:
 			# Calculate the expected X value and expected fault in feed in per unit
-			new_x_value = 1.0 / ((1.0 / constants.G74.x11) * math.exp(-fault_time / constants.G74.t11))
-			expected_fault_infeed_pu.append(pre_fault_v/(constants.G74.rpos**2 + new_x_value**2)**0.5)
+			# Target busbar is 11kV so need to account for 11/33kV transformer impendace
+			new_r_value = constants.G74.rpos - constants.G74.tx_r
+			new_x_value = 1.0 / ((1.0 / constants.G74.x11) * math.exp(-fault_time / constants.G74.t11)) - constants.G74.tx_x
+
+			expected_fault_infeed_pu.append(pre_fault_v/(new_r_value**2 + new_x_value**2)**0.5)
 			# Calculate new machine impedance values
 			g74_data.calculate_machine_impedance(fault_time=fault_time)
 
@@ -708,7 +712,7 @@ class TestPsseLoadData(unittest.TestCase):
 			df = iec.fault_3ph_all_buses(fault_time=fault_time)
 			dfs.append(df)
 
-		# Combine dataframes into an overall list
+		# Combine DataFrames into an overall list
 		df_all = pd.concat(dfs, axis=1, keys=fault_times_to_test)
 
 		# Calculate the values that would be expected based on the fault times tested
