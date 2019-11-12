@@ -15,6 +15,9 @@ import os
 import sys
 # TODO: May be better to actually embed this within G74
 local_packages = os.path.join(os.path.dirname(__file__), '..', 'local_packages')
+# Won't be searched unless it exists when added to system path
+if not os.path.exists(local_packages):
+	os.makedirs(local_packages)
 # Insert local_packages to start of path for fault studies
 sys.path.insert(0, local_packages)
 
@@ -22,14 +25,33 @@ import logging
 import logging.handlers
 import time
 import inspect
+import subprocess
 
 # Package imports
-import g74.constants as constants
-import g74.psse as psse
-import g74.file_handling as file_handling
-import g74.gui as gui
-
-
+try:
+	import g74.constants as constants
+	import g74.psse as psse
+	import g74.file_handling as file_handling
+	import g74.gui as gui
+except ImportError:
+	t0 = time.time()
+	print(
+		'Unable to import some packages because they may not have been installed, script will now install'
+		'missing packages but this may take some time, please be patient!!'
+	)
+	batch_path = os.path.join(os.path.dirname(__file__), '..', 'setup_SHEPD.bat')
+	print('The following batch file will be run to install the packages: {}'.format(batch_path))
+	subprocess.call([batch_path])
+	print(
+		(
+			'Unless the batch file showed an error packages have now been installed and took {:.2f} seconds'
+		).format(time.time()-t0)
+	)
+	import g74.constants as constants
+	import g74.psse as psse
+	import g74.file_handling as file_handling
+	import g74.gui as gui
+	print('All modules now imported correctly')
 
 # Meta Data
 __author__ = 'David Mills'
