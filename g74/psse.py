@@ -21,7 +21,6 @@ import numpy as np
 import re
 import math
 import time
-import string
 
 # Version of PSSE that will be initialised
 DEFAULT_PSSE_VERSION = 33
@@ -104,10 +103,12 @@ class InitialisePsspy:
 		self.set_psse_path()
 
 		global psspy
+		global redirect
 		global pssarrays
 		try:
 			# Import psspy used for manipulating PSSE
 			import psspy
+			import redirect
 			psspy = reload(psspy)
 			self.psspy = psspy
 
@@ -206,14 +207,20 @@ class InitialisePsspy:
 
 		return psse_py_path, psse_os_path
 	
-	def initialise_psse(self):
+	def initialise_psse(self, running_from_psse=False):
 		"""
 			Initialise PSSE
+		:param bool running_from_psse: (optional=False) - If set to True then running in PSSE and so output won't be
+									redirected to PSSE
 		:return bool self.psse: True / False depending on success of initialising PSSE
 		"""
 		if self.psse is True:
 			pass
 		else:
+			# Redirect statement ensures that psse output goes to python and avoids popup windows only if running in
+			# Python
+			if not running_from_psse:
+				redirect.psse2py()
 			error_code = self.psspy.psseinit()
 
 			if error_code != 0:
@@ -704,19 +711,19 @@ class PsseControl:
 							if blank then it will reload previous
 		:return None:
 		"""
+		# Determine whether being run from PSSE or being run from Python
+		self.running_from_psse()
+
 		try:
 			func = psspy.case
 		except NameError:
 			self.logger.debug('PSSE has not been initialised when trying to load save case, therefore initialised now')
-			success = InitialisePsspy().initialise_psse()
+			success = InitialisePsspy().initialise_psse(running_from_psse=self.run_in_psse)
 			if success:
 				func = psspy.case
 			else:
 				self.logger.critical('Unable to initialise PSSE')
 				raise ImportError('PSSE Initialisation Error')
-
-		# Determine whether being run from PSSE or being run from Python
-		self.running_from_psse()
 
 		# Set PSSE output accordingly
 		self.change_output(destination=constants.PSSE.output[constants.DEBUG_MODE])

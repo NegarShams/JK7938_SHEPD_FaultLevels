@@ -55,6 +55,9 @@ class GUI:
 	# study or start from empty
 	reload_sav_case = 1
 
+	# Open excel with completed files
+	open_excel = 1
+
 	def __init__(self):
 		"""
 			Purely to avoid error message

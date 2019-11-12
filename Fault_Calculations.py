@@ -12,25 +12,10 @@
 # This import needs to be run first to ensure that the script path is defined correctly in which some other
 # modules will be located (numpy and pandas in particular) that are required as part of this script package
 import os
-script_path = os.path.realpath(__file__)
-script_folder = os.path.dirname(script_path)
-
 import g74
 import g74.constants as constants
 import time
-try:
-	import pandas as pd
-except ImportError, err:
-	# TODO: Write function that will go and install the missing files using pip and try again
-	raise ImportError(
-		(
-			'Unable to import pandas most likely because it has not been installed correctly within the'
-			'folder that constains this script!\n'
-			'It should be installed manually using <pip> and the appropriate <.whl> using the command:\n'
-			'\t<pip install --ignore-installed --no-deps --target="{}" "{}\<name of file>.whl"\n'
-			'The full traceback was as follows:\n{}'
-		).format(script_folder, script_folder, err)
-	)
+import pandas as pd
 
 # If set to True then will delete all raw results data
 DELETE_RESULTS = False
@@ -122,6 +107,8 @@ if __name__ == '__main__':
 	# Create logger
 	uid = 'BKDY_{}'.format(time.strftime('%Y%m%d_%H%M%S'))
 	# Check temp folder exists and if not create
+	script_path = os.path.realpath(__file__)
+	script_folder = os.path.dirname(script_path)
 	temp_folder = os.path.join(script_folder, 'temp')
 	if not os.path.exists(temp_folder):
 		os.mkdir(temp_folder)
@@ -144,6 +131,7 @@ if __name__ == '__main__':
 	sav_name, _ = os.path.splitext(os.path.basename(pth_sav_case))
 	pth_sav_case_export = os.path.join(temp_folder, '{}.sav'.format(sav_name))
 	buses_to_fault = gui.selected_busbars
+	open_excel = gui.bo_open_excel.get()
 
 	times = bkdy_study(
 		sav_case=pth_sav_case, local_temp_folder=temp_folder, excel_file=target_file,
@@ -156,5 +144,9 @@ if __name__ == '__main__':
 	logger.info('Took {:.2f} seconds to add G74 machines'.format(times[2]))
 	logger.info('Took {:.2f} seconds to carry out fault study and save cases'.format(times[3]))
 	logger.info('Took {:.2f} seconds to export to excel'.format(times[4]))
+
+	# Open the exported excel if setting is as such
+	if open_excel:
+		os.startfile(target_file)
 
 	logger.info('Complete with total study time of {:.2f} seconds'.format(time.time()-t0))

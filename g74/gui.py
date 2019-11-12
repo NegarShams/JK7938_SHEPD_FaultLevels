@@ -59,6 +59,7 @@ class MainGUI:
 		self.bo_fault_3_ph_bkdy = tk.BooleanVar()
 		self.bo_fault_3_ph_iec = tk.BooleanVar()
 		self.bo_fault_1_ph_iec = tk.BooleanVar()
+		self.bo_open_excel = tk.BooleanVar()
 
 		# SAV case for faults to be run on
 		self.sav_case = sav_case
@@ -82,6 +83,9 @@ class MainGUI:
 
 		# Add button for calculating and saving fault currents
 		self.add_cmd_calculate_faults(row=self.row(2), col=self.col())
+
+		# Add tick box for whether it needs to be opened again on completion
+		self.add_open_excel(row=self.row(1), col=self.col())
 
 		self.logger.debug('GUI window created')
 		# Produce GUI window
@@ -257,6 +261,25 @@ class MainGUI:
 			if not enabled[i]:
 				check_button.config(state='disabled')
 		return i
+
+	def add_open_excel(self, row, col):
+		"""
+			Function to add a tick box on whether the user wants to open the Excel file of results at the end
+			:param int row:  Row number to use
+			:param int col:  Column number to use
+			:return None:
+		"""
+		lbl = 'Open exported Excel file'
+		self.bo_open_excel.set(constants.GUI.open_excel)
+		# Add tick box
+		check_button = tk.Checkbutton(
+			self.master, text=lbl, variable=self.bo_reload_sav
+		)
+		check_button.grid(row=row, column=col, columnspan=2, sticky=tk.W)
+		CreateToolTip(widget=check_button, text=(
+			'If selected the exported excel file will be loaded and visible on completion of the study.'
+		))
+		return None
 
 	def import_busbars_list(self):
 		"""

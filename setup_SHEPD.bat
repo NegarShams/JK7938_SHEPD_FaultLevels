@@ -79,8 +79,8 @@ echo "Any errors mean a package did not install and should be investigated furth
 %pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %current_dir%\xlwt-1.3.0-py2.py3-none-any.whl
 %pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %current_dir%\python_dateutil-2.8.1-py2.py3-none-any.whl
 %pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %current_dir%\pytz-2019.3-py2.py3-none-any.whl
-%pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %current_dir%\et_xmlfile-1.0.1.tar.gz
-%pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %current_dir%\openpyxl-2.6.4.tar.gz
+%pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %current_dir%\et_xmlfile-1.0.1-cp27-none-any.whl
+%pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %current_dir%\openpyxl-2.6.4-py2.py3-none-any.whl
 %pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %current_dir%\jdcal-1.4.1-py2.py3-none-any.whl
 %pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %current_dir%\pandas-0.24.2-cp27-cp27m-win32.whl
 

@@ -13,6 +13,12 @@
 # Generic Imports
 import os
 import sys
+import logging
+import logging.handlers
+import time
+import inspect
+import subprocess
+
 # TODO: May be better to actually embed this within G74
 local_packages = os.path.join(os.path.dirname(__file__), '..', 'local_packages')
 # Won't be searched unless it exists when added to system path
@@ -20,12 +26,6 @@ if not os.path.exists(local_packages):
 	os.makedirs(local_packages)
 # Insert local_packages to start of path for fault studies
 sys.path.insert(0, local_packages)
-
-import logging
-import logging.handlers
-import time
-import inspect
-import subprocess
 
 # Package imports
 try:
@@ -35,6 +35,7 @@ try:
 	import g74.gui as gui
 except ImportError:
 	t0 = time.time()
+	# TODO: Add in a check to confirm that the files actually exist
 	print(
 		'Unable to import some packages because they may not have been installed, script will now install'
 		'missing packages but this may take some time, please be patient!!'
