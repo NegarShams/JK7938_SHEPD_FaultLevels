@@ -169,19 +169,28 @@ class BkdyFileOutput:
 	r = 'R (p.u. on {:.0f} MVA)'.format(base_mva)
 
 	# Error flag if Vpk returns infinity
+	# TODO:  Check if this is still used
 	infinity_error = '*******'
 
 	# Regex search expression broken down as follows:
+	# (Infin)|(ity)|(\*{9} = Picks up the values returned if there is an error
 	# (\*{9}) = Matches a 9 character * string which is returned for infinite values at time 0
-	# (\d\.\d{4,5}(?!\d+\.)) = Matches single decimal followed by 4 or 5 numerical values where there are not
-	# 							more numerical values and a decimal point following that point.
-	# #							This will pick up the R and X values as well as the pre-fault voltage
+	# (-{0,1}\d\.\d{4,5}(?!\d+\.)) =	Matches an optional - symbol followed by 4 or 5 numerical values where
+	# 							there are not more numerical values and a decimal point following that point.
+	# 							This will pick up the R and X values as well as the pre-fault voltage the optional -
+	# 							allowing the values to be returned negative if the exist for error reporting.
 	# (\d{1,3}\.\d{2}) = Matches for either a 1 to 3 decimal number followed by a decimal point and a 2 decimal number.
 	# #					This will pick up angles.
 	# (\d+\.\d) = Matches for any number of numerical values leading a decimal point with a single numerical value
 	# 			afterwards.  This will pick up the fault current magnitudes.
 	# #reg_search = re.compile('(\*{9})|(\d\.\d{4,5}(?!\d+\.))|(\d{1,3}\.\d{2})|(\d+\.\d)')
-	reg_search = re.compile('(Infin)|(ity)|(\*{9})|(\d\.\d{4,5}(?!\d+\.))|(\d{1,3}\.\d{2})|(\d+\.\d)')
+	reg_search = re.compile('(Infin)|(ity)|(\*{9})|(-?\d\.\d{4,5}(?!\d+\.))|(\d{1,3}\.\d{2})|(\d+\.\d)')
+	# The following terms are used to confirm whether there are values returned which relate to an infinite value and
+	# handled correctly.
+	# TODO: May need to add an aditional check to confirm that no values are returned as infinity when they shouldn't be
+	nan_term1 = 'Infin'
+	nan_term2 = 'ity'
+	nan_term3 = '*' * 9
 
 	# NaN value that is returned if error calculating fault current values
 	nan_value = 'NaN'

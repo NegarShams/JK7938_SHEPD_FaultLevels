@@ -208,7 +208,7 @@ class TestBkdyNonPSSEComponents(unittest.TestCase):
 		bkdy_file = test_module.BkdyFile(output_file=self.output_file, fault_time=0.01)
 
 		df = bkdy_file.process_bkdy_output()
-		self.assertAlmostEqual(df.loc[1, constants.BkdyFileOutput.ibasym], 1.6295, places=2)
+		self.assertAlmostEqual(df.loc[1, constants.BkdyFileOutput.ibasym], 1.6358, places=2)
 		self.assertAlmostEqual(df.loc[1501, constants.BkdyFileOutput.ip], 3.9073, places=2)
 		self.assertAlmostEqual(df.loc[5001, constants.BkdyFileOutput.ik11], 6.1801, places=2)
 		self.assertAlmostEqual(df.loc[5101, constants.BkdyFileOutput.ibsym], 3.7529, places=2)
@@ -516,6 +516,79 @@ class TestBkdyIntegration(unittest.TestCase):
 		for path in (SAV_CASE_COMPLETE2, idev_file):
 			self.assertTrue(os.path.exists(path))
 			os.remove(path)
+
+	def test_infinity_in_results_handled_correctly(self):
+		"""
+			Routine tests that for results where the thevenin impedance is negative return either ***** or infinity
+			this confirms that they are handled correctly.  For the test model this has been setup for faults on the
+			1301 busbar
+		:return: None
+		"""
+		# IDEV file
+		idev_file = os.path.join(TESTS_DIR, 'test{}'.format(constants.PSSE.ext_bkd))
+		output_currents1 = os.path.join(TESTS_DIR, 'infinity_currents1{}'.format(constants.General.ext_csv))
+		output_currents2 = os.path.join(TESTS_DIR, 'infinity_currents2{}'.format(constants.General.ext_csv))
+
+		# Busbar 1301 has been setup to return infinite values and -X for long fault durations
+		bus = 1301
+		# Fault times being tested
+		ft1 = 0.06
+		ft2 = 0.5
+
+		# Paths and fault times to be considered
+		output_paths = (output_currents1, output_currents2)
+		fault_times = (ft1, ft2)
+
+		bkdy = test_module.BkdyFaultStudy(psse_control=self.psse)
+		bkdy.create_breaker_duty_file(target_path=idev_file)
+
+		# Run fault study on each fault time
+		for path, fault_time in zip(output_paths, fault_times):
+			bkdy.main(output_file=path, fault_time=fault_time, name='{:.2f}'.format(fault_time))
+
+		# Process results of BKDY files into relevant inputs
+		dfs = dict()
+		for path, fault_time in zip(output_paths, fault_times):
+			# Confirm that either **** or Infinity in each of the files
+			test_term_exists = False
+			with open(path) as test_file:
+				contents = test_file.read()
+				if (
+						constants.BkdyFileOutput.nan_term1 in contents or
+						constants.BkdyFileOutput.nan_term2 in contents or
+						constants.BkdyFileOutput.nan_term3 in contents
+				):
+					test_term_exists = True
+			self.assertTrue(test_term_exists)
+
+			# File manually set for unittesting
+			bkdy_file = test_module.BkdyFile(output_file=path, fault_time=fault_time)
+			df = bkdy_file.process_bkdy_output(delete=False)
+
+			# Delete original file once processed
+			dfs[fault_time] = df
+
+		# Check that the calculated values in df are correct when dealing with the **** and nan values in the
+		# results file
+		df = pd.concat(dfs.values(), axis=1, keys=dfs.keys())
+		# DC value from method 1 should be as per BKDY output file and method 2 converted to 0.0
+		self.assertAlmostEqual(df.loc[bus, (ft2, constants.BkdyFileOutput.idc_method1)], 3.67120, places=3)
+		self.assertAlmostEqual(df.loc[bus, (ft2, constants.BkdyFileOutput.idc_method2)], 0.00000, places=3)
+		self.assertAlmostEqual(df.loc[bus, (ft1, constants.BkdyFileOutput.idc_method1)], 3.67120, places=3)
+		self.assertAlmostEqual(df.loc[bus, (ft1, constants.BkdyFileOutput.idc_method2)], 0.00000, places=3)
+
+		# Peak value from method 1 should be as per BKDY output file and method 2 converted to 0.0
+		self.assertAlmostEqual(df.loc[bus, (ft2, constants.BkdyFileOutput.ip_method1)], 7.36170, places=3)
+		self.assertAlmostEqual(df.loc[bus, (ft2, constants.BkdyFileOutput.ip_method2)], 0.00000, places=3)
+		self.assertAlmostEqual(df.loc[bus, (ft1, constants.BkdyFileOutput.ip_method1)], 7.36170, places=3)
+		self.assertAlmostEqual(df.loc[bus, (ft1, constants.BkdyFileOutput.ip_method2)], 0.00000, places=3)
+
+		# X values for busbar 1301 should be negative
+		self.assertTrue(df.loc[bus, (ft1, constants.BkdyFileOutput.x)] < 0)
+		self.assertTrue(df.loc[bus, (ft2, constants.BkdyFileOutput.x)] < 0)
+
+		# Delete idev file
+		os.remove(idev_file)
 
 	@classmethod
 	def tearDownClass(cls):

@@ -100,6 +100,15 @@ def bkdy_study(
 	# Restore output to defaults
 	psse.change_output(destination=1)
 
+	# Produce error message at end of output to report potential busbar fault error issues
+	if bkdy.unreliable_faulted_buses:
+		msg0 = (
+			'The following busbars had an issue carrying out the fault current study which has been reported above and '
+			'as such the value for these busbars is unreliable:'
+		)
+		msg1 = '\n'.join(['\t - {}'.format(bus) for bus in set(bkdy.unreliable_faulted_buses)])
+		logger.warning('{}\n{}'.format(msg0, msg1))
+
 	return t2, t3, t4, t5, t6
 
 

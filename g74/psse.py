@@ -51,11 +51,11 @@ def extract_values(line, expected_length=0):
 	value = np.nan
 	for group in data:
 		# #TODO: Define as inputs rather than scripts
-		if '*' * 9 in group:
-			value = 0.0
-		elif 'Infin' in group:
-			value = 0.0
-		elif 'ity' in group:
+		if (
+				constants.BkdyFileOutput.nan_term1 in group or
+				constants.BkdyFileOutput.nan_term2 in group or
+				constants.BkdyFileOutput.nan_term3 in group
+		):
 			value = 0.0
 		else:
 			# Extract single value and convert to flat list
@@ -1215,6 +1215,9 @@ class BkdyFaultStudy:
 		# DataFrame with the combined results for the BKDY method
 		self.df_combined_results = pd.DataFrame()
 
+		# List of busbars where there has been an issue in the fault study that are unreliable
+		self.unreliable_faulted_buses = list()
+
 		# Check that the MVA values match with the expected value used in the constants
 		self.check_mva_value()
 
@@ -1348,6 +1351,21 @@ class BkdyFaultStudy:
 		# Subsequent data extraction then deals with processing the relevant data
 		self.df_combined_results = pd.concat(dfs.values(), axis=1, keys=dfs.keys())
 
+		# Check for any negative R and X values and report busbars which have these values
+		df_negative_impedance = self.df_combined_results[
+			self.df_combined_results.loc[:, (slice(None), constants.BkdyFileOutput.x)] < 0
+		].dropna(axis=0, how='all')
+		if not df_negative_impedance.empty:
+			negative_buses = df_negative_impedance.index
+			self.unreliable_faulted_buses.extend(negative_buses)
+			for bus in negative_buses:
+				self.logger.warning(
+					(
+						'The busbar {} has a negative fault impedance value and therefore the fault current value '
+						'returned by the PSSE BKDY method is unreliable and should not be used'
+					).format(bus)
+				)
+
 		return self.df_combined_results
 
 	def calculate_fault_currents(self, fault_times, g74_infeed, buses=list(), delete=True):
@@ -1414,13 +1432,18 @@ class BkdyFaultStudy:
 			self.logger.info('No busbars defined and so all busbars will be faulted')
 			self.all_buses = 1
 
-		# Loop through fault current studies producing fault files initially for ik''
+		# Loop through fault current studies producing fault files initially for ik'' and DC component decay
 		for fault, file_path in zip(fault_times, initial_fault_files):
 			# Run fault study for this result
 			# Fault is given name value for subsequent processing
-			self.logger.info("Fault study for fault time {:.2f} seconds to determine ik'' values".format(fault))
+			_t = time.time()
+			self.logger.info(
+				'Calculating fault current {:.2f} after fault application to determine DC decay'.format(fault)
+			)
 			self.main(name=fault, output_file=file_path, fault_time=fault)
-			self.logger.info('Fault study for {:.2f} seconds completed'.format(fault))
+			self.logger.info(
+				'Fault currents {:.2f} seconds after application completed in {:.2f} seconds'.format(fault, time.time()-_t)
+			)
 
 		# Process results from initial fault into a DataFrame and delete if necessary
 		df = self.combine_bkdy_output(delete=delete)
@@ -1430,16 +1453,19 @@ class BkdyFaultStudy:
 			# Recalculate machine parameters based on fault time
 			g74_infeed.calculate_machine_impedance(fault_time=fault, update=True)
 			# TODO: Make this capable as part of debugging for every fault time
-			# #if fault == 0.01:
-			# #	self.psse.save_data_case(
-			# #		pth_sav=r'C:\Users\david\PycharmProjects\JK7938_SHEPD_FaultLevels\temp\SHEPD 2018 LTDS Winter Peak(10ms).sav'
-			# #	)
 			# Run fault study for this result
+			_t = time.time()
 			self.logger.info(
-				'Fault study for fault time {:.2f} seconds to determine decremented fault current values'.format(fault)
+				(
+					'Calculating fault current {:.2f} after fault application to determine reduced AC component'
+				).format(fault)
 			)
 			self.main(name=fault, output_file=file_path, fault_time=fault)
-			self.logger.info('Fault study for fault time {:.2f} completed'.format(fault))
+			self.logger.info(
+				(
+					'Fault currents {:.2f} seconds after application completed in {:.2f} seconds'
+				).format(fault, time.time() - _t)
+			)
 
 		# Process results from ik(t) fault into a DataFrame and delete results files if necessary
 		df_decr = self.combine_bkdy_output(delete=delete)
