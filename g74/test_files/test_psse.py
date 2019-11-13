@@ -688,25 +688,42 @@ class TestPsseLoadData(unittest.TestCase):
 
 		# Iterative loop that tests a range of fault times
 		dfs = list()
-		expected_fault_infeed_pu = list()
+		expected_f33_infeed_pu = list()
+		expected_f11_infeed_pu = list()
+
+		# R values remain constant for all fault times
+		new_r33_value = constants.G74.rpos
+		new_r11_value = new_r33_value - constants.G74.tx_r
 		for fault_time in fault_times_to_test:
 			# Calculate the expected X value and expected fault in feed in per unit
 			# Target busbar is 11kV so need to account for 11/33kV transformer impendace
-			new_r_value = constants.G74.rpos - constants.G74.tx_r
-			new_x_value = 1.0 / ((1.0 / constants.G74.x11) * math.exp(-fault_time / constants.G74.t11)) - constants.G74.tx_x
+			if fault_time > constants.PSSE.min_fault_time:
+				new_x33_value = 1.0 / ((1.0 / constants.G74.x11) * math.exp(-fault_time / constants.G74.t11))
+			else:
+				new_x33_value = constants.G74.x11
 
-			expected_fault_infeed_pu.append(pre_fault_v/(new_r_value**2 + new_x_value**2)**0.5)
+			new_x11_value = new_x33_value - constants.G74.tx_x
+
+			expected_f33_infeed_pu.append(pre_fault_v/(new_r33_value**2 + new_x33_value**2)**0.5)
+			expected_f11_infeed_pu.append(pre_fault_v/(new_r11_value**2 + new_x11_value**2)**0.5)
 			# Calculate new machine impedance values
 			g74_data.calculate_machine_impedance(fault_time=fault_time)
 
 			# Confirm value is correct for two difference values
 			self.assertAlmostEqual(
-				g74_data.df_machines.loc[1, constants.Machines.xsubtr], new_x_value, places=5)
+				g74_data.df_machines.loc[11, constants.Machines.xsubtr], new_x11_value, places=5)
 			self.assertAlmostEqual(
-				g74_data.df_machines.loc[1, constants.Machines.xsynch], new_x_value, places=5)
+				g74_data.df_machines.loc[11, constants.Machines.xsynch], new_x11_value, places=5)
+			self.assertAlmostEqual(
+				g74_data.df_machines.loc[33, constants.Machines.xsubtr], new_x33_value, places=5)
+			self.assertAlmostEqual(
+				g74_data.df_machines.loc[33, constants.Machines.xsynch], new_x33_value, places=5)
 
 			# Add machines to model
 			g74_data.add_machines()
+
+			if fault_time == constants.PSSE.min_fault_time:
+				self.psse.save_data_case(pth_sav=SAV_CASE_COMPLETE2)
 
 			# Run fault study for both busbars at this time step
 			df = iec.fault_3ph_all_buses(fault_time=fault_time)
@@ -718,15 +735,17 @@ class TestPsseLoadData(unittest.TestCase):
 		# Calculate the values that would be expected based on the fault times tested
 		expected_values_11 = dict(zip(
 			fault_times_to_test,
-			[x*load_value*constants.G74.mva_11/(math.sqrt(3)*11.0) for x in expected_fault_infeed_pu]
+			[x*load_value*constants.G74.mva_11/(math.sqrt(3)*11.0) for x in expected_f11_infeed_pu]
 		))
 		expected_values_33 = dict(zip(
 			fault_times_to_test,
-			[x*load_value*constants.G74.mva_33/(math.sqrt(3)*33.0) for x in expected_fault_infeed_pu]
+			[x*load_value*constants.G74.mva_33/(math.sqrt(3)*33.0) for x in expected_f33_infeed_pu]
 		))
 
-		# Extract the RMS symmetrical break values which vary correctly with fault time
-		df_ik = df_all.xs(constants.BkdyFileOutput.ibsym, axis=1, level=1, drop_level=True)
+		# Extract the RMS symmetrical values and confirm they vary correctly with fault time
+		# The ik'' values are used rather than ib since the IEC method takes into consideration other factors in
+		# determining ib
+		df_ik = df_all.xs(constants.BkdyFileOutput.ik11, axis=1, level=1, drop_level=True)
 		cols = df_ik.columns
 		# Validate that all values are correct
 		for fault_time in cols:
@@ -752,8 +771,18 @@ class TestPsseLoadData(unittest.TestCase):
 		pre_fault_v = 1.0
 		# Load value modelled as 5.0 MVA in PSSe test model
 		load_value = 5.0
-		# Calculated DC component for each time step
-		expected_ik_pu = pre_fault_v / (constants.G74.rpos**2 + constants.G74.x11**2)**0.5
+
+		# Calculated ik'' values for 11 and 33kV busbars
+		r33_value = constants.G74.rpos
+		r11_value = r33_value - constants.G74.tx_r
+		x33_value = constants.G74.x11
+		x11_value = x33_value - constants.G74.tx_x
+		expected_ik33_pu = pre_fault_v / (r33_value**2 + x33_value**2)**0.5
+		expected_ik11_pu = pre_fault_v / (
+				r11_value**2 +
+				x11_value**2)**0.5
+
+		# Empty dictionaries populated with each time step
 		expected_values_11 = dict()
 		expected_values_33 = dict()
 
@@ -777,20 +806,20 @@ class TestPsseLoadData(unittest.TestCase):
 			# Calculate the expected DC value at this time using equation 5.3.1 of G74
 			expected_values_11[fault_time] = (
 					math.sqrt(2) *
-					(expected_ik_pu*load_value*constants.G74.mva_11/(math.sqrt(3)*11.0)) *
-					math.exp(-2*math.pi*50.0*fault_time*(1.0/constants.G74.x_r_11))
+					(expected_ik11_pu * load_value * constants.G74.mva_11 / (math.sqrt(3) * 11.0)) *
+					math.exp(-2 * math.pi * 50.0 * fault_time * (r11_value / x11_value))
 			)
 			expected_values_33[fault_time] = (
 					math.sqrt(2) *
-					(expected_ik_pu * load_value * constants.G74.mva_33 / (math.sqrt(3) * 33.0)) *
-					math.exp(-2 * math.pi * 50.0 * fault_time * (1.0 / constants.G74.x_r_33))
+					(expected_ik33_pu * load_value * constants.G74.mva_33 / (math.sqrt(3) * 33.0)) *
+					math.exp(-2 * math.pi * 50.0 * fault_time * (r33_value / x33_value))
 			)
 
 			# Run fault study for both busbars at this time step
 			df = iec.fault_3ph_all_buses(fault_time=fault_time)
 			dfs.append(df)
 
-		# Combine dataframes into an overall list
+		# Combine DataFrames into an overall list
 		df_all = pd.concat(dfs, axis=1, keys=fault_times_to_test)
 
 		# Extract the DC component and confirm vary correctly with fault time

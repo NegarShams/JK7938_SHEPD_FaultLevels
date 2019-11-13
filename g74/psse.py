@@ -50,7 +50,12 @@ def extract_values(line, expected_length=0):
 	# TODO: Looping through multiple loops here, maybe better way to return from REGEX search
 	value = np.nan
 	for group in data:
+		# #TODO: Define as inputs rather than scripts
 		if '*' * 9 in group:
+			value = 0.0
+		elif 'Infin' in group:
+			value = 0.0
+		elif 'ity' in group:
 			value = 0.0
 		else:
 			# Extract single value and convert to flat list
@@ -110,6 +115,7 @@ class InitialisePsspy:
 			import psspy
 			import redirect
 			psspy = reload(psspy)
+			redirect = reload(redirect)
 			self.psspy = psspy
 
 		except ImportError:
@@ -1412,7 +1418,9 @@ class BkdyFaultStudy:
 		for fault, file_path in zip(fault_times, initial_fault_files):
 			# Run fault study for this result
 			# Fault is given name value for subsequent processing
+			self.logger.info("Fault study for fault time {:.2f} seconds to determine ik'' values".format(fault))
 			self.main(name=fault, output_file=file_path, fault_time=fault)
+			self.logger.info('Fault study for {:.2f} seconds completed'.format(fault))
 
 		# Process results from initial fault into a DataFrame and delete if necessary
 		df = self.combine_bkdy_output(delete=delete)
@@ -1421,8 +1429,17 @@ class BkdyFaultStudy:
 		for fault, file_path in zip(fault_times, ac_decrement_files):
 			# Recalculate machine parameters based on fault time
 			g74_infeed.calculate_machine_impedance(fault_time=fault, update=True)
+			# TODO: Make this capable as part of debugging for every fault time
+			# #if fault == 0.01:
+			# #	self.psse.save_data_case(
+			# #		pth_sav=r'C:\Users\david\PycharmProjects\JK7938_SHEPD_FaultLevels\temp\SHEPD 2018 LTDS Winter Peak(10ms).sav'
+			# #	)
 			# Run fault study for this result
+			self.logger.info(
+				'Fault study for fault time {:.2f} seconds to determine decremented fault current values'.format(fault)
+			)
 			self.main(name=fault, output_file=file_path, fault_time=fault)
+			self.logger.info('Fault study for fault time {:.2f} completed'.format(fault))
 
 		# Process results from ik(t) fault into a DataFrame and delete results files if necessary
 		df_decr = self.combine_bkdy_output(delete=delete)
@@ -1829,7 +1846,10 @@ class G74FaultInfeed:
 		:return None:
 		"""
 		# Calculate X'', X' and X values based on fault_time (based on equation 9.5.2 of G74 1992
-		x_value = 1.0 / ((1.0 / self.c.x11) * math.exp(-fault_time / self.c.t11))
+		if fault_time > constants.PSSE.min_fault_time:
+			x_value = 1.0 / ((1.0 / self.c.x11) * math.exp(-fault_time / self.c.t11))
+		else:
+			x_value = self.c.x11
 
 		# Update DataFrame with these values
 		c = constants.Machines
@@ -1967,8 +1987,47 @@ class IecFaults:
 		self.buses = buses
 		self.sid = psse.sid
 
+		# Values used for processing results
+		self.bus_data = BusData()
+		self.result_unit = str()
+		self.result_coordinate = str()
+
 		# Set fault units and coordinates to the correct formats
 		psse.set_outputs()
+
+	def extract_value(self, value_to_convert, bus):
+		"""
+			Function processes an individual result to extract the relevant format based on the output format
+		:param complex value_to_convert:  Value that needs returning in the relevant format
+		:param int bus:  Relevant busbar number for this bus, required if extracting the unit data
+		:return float value: The converted value that is returned
+		"""
+		if self.result_coordinate == 'rectangular':
+			# If rectangular then magnitude is given by absolute of complex number
+			value = abs(value_to_convert)
+		elif self.result_coordinate == 'polar':
+			# If polar then first value is magnitude and second value is angle
+			value = value_to_convert.real
+		else:
+			self.logger.critical(
+				'Unexpected value <{}> returned for IEC fault current coordinates'.format(self.result_coordinate)
+			)
+			raise SyntaxError('Unexpected value returned for IEC fault current coordinates')
+
+		# Convert to required kA or A value
+		if self.result_unit == 'pu':
+			bus_nominal_voltage = self.bus_data.df.loc[bus, self.bus_data.c.nominal]
+			# Convert value to kA
+			value = value*(constants.PSSE.base_mva / (bus_nominal_voltage*3**0.5))
+		elif self.result_unit == 'physical':
+			value = value / constants.BkdyFileOutput.num_to_kA
+		else:
+			self.logger.critical(
+				'Unexpected value <{}> returned for IEC fault current results unit'.format(self.result_unit)
+			)
+			raise SyntaxError('Unexpected value returned for IEC fault current unit')
+
+		return value
 
 	def fault_3ph_all_buses(self, fault_time):
 		"""
@@ -1980,10 +2039,10 @@ class IecFaults:
 		func_iecs = pssarrays.iecs_currents
 
 		# Get latest busbar data
-		bus_data = BusData()
+		self.bus_data = BusData()
 		# If looking at all busbars then produce list of buses based on all busbars
 		if self.sid == -1:
-			buses_to_fault = bus_data.df[bus_data.c.bus].tolist()
+			buses_to_fault = self.bus_data.df[self.bus_data.c.bus].tolist()
 		else:
 			buses_to_fault = self.buses
 
@@ -1994,12 +2053,18 @@ class IecFaults:
 		# Loop through each busbar and perform fault current calculation
 		for bus in buses_to_fault:
 			# Get the pre-fault voltage for this busbar
-			pre_fault_v = bus_data.df.loc[bus, bus_data.c.voltage]
+			pre_fault_v = self.bus_data.df.loc[bus, self.bus_data.c.voltage]
 			# TODO: Need to confirm parameters for IEC fault current calculation
 			iec_results = func_iecs(
 				sid=self.sid,
 				flt3ph=1,
 				fltloc=0,
+				# Line charging set to 1, 0.0 in positive and negative sequences
+				lnchrg=1,
+				# Zero sequence transformer impedance correction is ignored
+				zcorec=0,
+				# Load treated as 0.0 in positive, negative sequences
+				loadop=1,
 				optnftrc=2,
 				brktime=fault_time,
 				vfactorc=pre_fault_v
@@ -2013,13 +2078,15 @@ class IecFaults:
 				)
 				raise ValueError('Error running IEC fault current')
 			else:
+				self.result_coordinate = iec_results.scfmt
+				self.result_unit = iec_results.scunit
 
 				bus_idx = iec_results.fltbus.index(bus)
-				df.loc[bus, c.ik11] = abs(iec_results.flt3ph[bus_idx].ia1)/c.num_to_kA
-				df.loc[bus, c.ip] = abs(iec_results.flt3ph[bus_idx].ipc)/c.num_to_kA
-				df.loc[bus, c.idc] = abs(iec_results.flt3ph[bus_idx].idc)/c.num_to_kA
-				df.loc[bus, c.ibsym] = abs(iec_results.flt3ph[bus_idx].ibsym)/c.num_to_kA
-				df.loc[bus, c.ibasym] = abs(iec_results.flt3ph[bus_idx].ibuns)/c.num_to_kA
+				df.loc[bus, c.ik11] = self.extract_value(iec_results.flt3ph[bus_idx].ia1, bus)
+				df.loc[bus, c.ip] = self.extract_value(iec_results.flt3ph[bus_idx].ipc, bus)
+				df.loc[bus, c.idc] = self.extract_value(iec_results.flt3ph[bus_idx].idc, bus)
+				df.loc[bus, c.ibsym] = self.extract_value(iec_results.flt3ph[bus_idx].ibsym, bus)
+				df.loc[bus, c.ibasym] = self.extract_value(iec_results.flt3ph[bus_idx].ibuns, bus)
 
 		# Return the DataFrame of the results for 3 phase faults
 		return df

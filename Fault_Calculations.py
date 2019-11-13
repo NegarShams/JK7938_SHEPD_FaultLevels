@@ -146,6 +146,7 @@ if __name__ == '__main__':
 	logger.info('Took {:.2f} seconds to export to excel'.format(times[4]))
 
 	# Open the exported excel if setting is as such
+	# TODO: Detect if already open and if so save with a different name and open
 	if open_excel:
 		os.startfile(target_file)
 

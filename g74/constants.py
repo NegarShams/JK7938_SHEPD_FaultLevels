@@ -65,11 +65,72 @@ class GUI:
 		pass
 
 
+class PSSE:
+	"""
+		Class to hold all of the constants associated with PSSE initialisation
+	"""
+	# Base MVA value assumed
+	base_mva = 100.0
+
+	# Setting on whether PSSE should output results based on whether operating in DEBUG_MODE or not
+	output = {True: 1, False: 6}
+	file_output = 2
+
+	# Maximum number of iterations for a Newton Raphson load flow (default = 20)
+	max_iterations = 100
+	# Tolerance for mismatch in MW/Mvar (default = 0.1)
+	mw_mvar_tolerance = 1.0
+
+	sid = 1
+
+	# Load Flow Constants
+	tie_line_flows = 0  # Don't enable tie line flows
+	phase_shifting = 0  # Phase shifting adjustment disabled
+	dc_tap_adjustment = 0  # DC tap adjustment disabled
+	var_limits = 0  # Apply VAR limits immediately
+	non_divergent = 0
+
+	ext_bkd = '.bkd'
+
+	# Default parameters for PSSE outputs
+	# 1 = physical units
+	def_short_circuit_units = 1
+	# 1 = polar coordinates
+	def_short_circuit_coordinates = 1
+
+	# Minimum fault time that can be considered (in seconds)
+	min_fault_time = 0.0001
+
+	# Dependant on whether running in PSSE 33 or 34
+	if 'PROGRAMFILES(X86)' in os.environ:
+		program_files_directory = r'C:\Program Files (x86)\PTI'
+	else:
+		program_files_directory = r'C:\Program Files\PTI'
+
+	# PSSE version dependant paths
+	psse_paths = {
+		32: 'PSSE32\PSSBIN',
+		33: 'PSSE33\PSSBIN',
+		34: 'PSSE34\PSSPY27'
+	}
+	os_paths = {
+		32: 'PSSE32\PSSBIN',
+		33: 'PSSE33\PSSBIN',
+		34: 'PSSE34\PSSBIN'
+	}
+
+	# Relevant filenames for PSSPY and PSSE when needing to search for them
+	psspy_to_find = "psspy.pyc"
+	pssarrays_to_find = "pssarrays.pyc"
+	psse_to_find = "psse.bat"
+	default_install_directory = r'C:\ProgramData\Microsoft\AppV\Client\Integration'
+
+
 class BkdyFileOutput:
 	"""
 		Constants for processing BKDY file output
 	"""
-	base_mva = 100.0
+	base_mva = PSSE.base_mva
 
 	# TODO: Add this a constants value
 	if convert_to_kA:
@@ -119,7 +180,8 @@ class BkdyFileOutput:
 	# #					This will pick up angles.
 	# (\d+\.\d) = Matches for any number of numerical values leading a decimal point with a single numerical value
 	# 			afterwards.  This will pick up the fault current magnitudes.
-	reg_search = re.compile('(\*{9})|(\d\.\d{4,5}(?!\d+\.))|(\d{1,3}\.\d{2})|(\d+\.\d)')
+	# #reg_search = re.compile('(\*{9})|(\d\.\d{4,5}(?!\d+\.))|(\d{1,3}\.\d{2})|(\d+\.\d)')
+	reg_search = re.compile('(Infin)|(ity)|(\*{9})|(\d\.\d{4,5}(?!\d+\.))|(\d{1,3}\.\d{2})|(\d+\.\d)')
 
 	# NaN value that is returned if error calculating fault current values
 	nan_value = 'NaN'
@@ -181,64 +243,6 @@ class BkdyFileOutput:
 			)
 
 		return cols, expected_length
-
-
-class PSSE:
-	"""
-		Class to hold all of the constants associated with PSSE initialisation
-	"""
-	# Setting on whether PSSE should output results based on whether operating in DEBUG_MODE or not
-	output = {True: 1, False: 6}
-	file_output = 2
-
-	# Maximum number of iterations for a Newton Raphson load flow (default = 20)
-	max_iterations = 100
-	# Tolerance for mismatch in MW/Mvar (default = 0.1)
-	mw_mvar_tolerance = 1.0
-
-	sid = 1
-
-	# Load Flow Constants
-	tie_line_flows = 0  # Don't enable tie line flows
-	phase_shifting = 0  # Phase shifting adjustment disabled
-	dc_tap_adjustment = 0  # DC tap adjustment disabled
-	var_limits = 0  # Apply VAR limits immediately
-	non_divergent = 0
-
-	ext_bkd = '.bkd'
-
-	# Default parameters for PSSE outputs
-	# 1 = polar coordinates
-	def_short_circuit_units = 1
-	# 1 = physical units
-	def_short_circuit_coordinates = 1
-
-	# Minimum fault time that can be considered (in seconds)
-	min_fault_time = 0.0001
-
-	# Dependant on whether running in PSSE 33 or 34
-	if 'PROGRAMFILES(X86)' in os.environ:
-		program_files_directory = r'C:\Program Files (x86)\PTI'
-	else:
-		program_files_directory = r'C:\Program Files\PTI'
-
-	# PSSE version dependant paths
-	psse_paths = {
-		32: 'PSSE32\PSSBIN',
-		33: 'PSSE33\PSSBIN',
-		34: 'PSSE34\PSSPY27'
-	}
-	os_paths = {
-		32: 'PSSE32\PSSBIN',
-		33: 'PSSE33\PSSBIN',
-		34: 'PSSE34\PSSBIN'
-	}
-
-	# Relevant filenames for PSSPY and PSSE when needing to search for them
-	psspy_to_find = "psspy.pyc"
-	pssarrays_to_find = "pssarrays.pyc"
-	psse_to_find = "psse.bat"
-	default_install_directory = r'C:\ProgramData\Microsoft\AppV\Client\Integration'
 
 
 class Loads:
