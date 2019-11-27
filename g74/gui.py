@@ -28,6 +28,11 @@ class MainGUI:
 		:param str title: (optional) - Title to be used for main window
 		:param str sav_case: (optional) - Full path to the existing SAV case
 		TODO: Add option to reload initial SAV case on completion (default to ticked)
+		TODO: Add help button which loads work-instruction
+		TODO: Add PSC logo and title to GUI
+		TODO: Add tooltips
+		TODO: Potential option for parallel processing where PSSE prepares the model once SAV case selected and user
+		TODO:	is still selecting busbars but very hard to implement.
 		"""
 		# Get logger handle
 		self.logger = logging.getLogger(constants.Logging.logger_name)
@@ -300,7 +305,8 @@ class MainGUI:
 		self.results_pth = os.path.dirname(file_path)
 
 		# Enable button to allow popup of busbars to be edited to be created
-		# TODO: Still to be created
+		# TODO: Create list of busbars that can be edited / deleted
+		# TODO: Obtain list of busbars from user interface
 		self.cmd_edit_busbars.config(state='disabled')
 		return None
 

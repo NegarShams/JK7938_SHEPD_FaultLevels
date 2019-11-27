@@ -9,66 +9,79 @@
 #######################################################################################################################
 """
 
-# This import needs to be run first to ensure that the script path is defined correctly in which some other
-# modules will be located (numpy and pandas in particular) that are required as part of this script package
+# Modules to be imported first
 import os
 import g74
 import g74.constants as constants
 import time
 import pandas as pd
 
-# If set to True then will delete all raw results data
-DELETE_RESULTS = False
+# Meta Data
+__author__ = 'David Mills'
+__version__ = '0.0.1'
+__email__ = 'david.mills@PSCconsulting.com'
+__phone__ = '+44 7899 984158'
+__status__ = 'In Development - Beta'
 
 
-def bkdy_study(
-		sav_case, local_temp_folder, excel_file, export_sav_case,
-		fault_times, buses, local_logger, reload_sav=True
+def fault_study(
+		local_uid, sav_case, local_temp_folder, excel_file, fault_times, buses, local_logger, reload_sav=True
 ):
 	"""
-		Run BKDY G74 fault study calculation
-	:param str sav_case:
-	:param str local_temp_folder:
-	:param str excel_file:
-	:param str export_sav_case:
+		Run G74 fault study calculation using PSSE BKDY or IEC methods and obtain the
+		fault current at all the busbars that have been listed.
+	:param str local_uid:  Unique identifier for this study used to append to files
+	:param str sav_case:  Full path to the SAV case that should be used for the fault study
+	:param str local_temp_folder:  Local temporary folder into which to save temporary data
+	:param str excel_file:  Full path to where results should be exported
 	:param list fault_times:  Times that fault study is run for
 	:param list buses:  List of busbars to fault
-	:param g74.Logger local_logger:
-	:param bool reload_sav:  Whether original SAV case should be reloaded at the end
-	:return:
+	:param g74.Logger local_logger:  Path to logger
+	:param bool reload_sav:  (optional=True) Whether original SAV case should be reloaded at the end
+	:return None:
 	"""
-	t1 = time.time()
+	# Produce temporary files
+	t = time.time()
 	temp_bkd_file = os.path.join(local_temp_folder, 'bkdy_machines{}'.format(constants.PSSE.ext_bkd))
 
-	# Load SAV case
+	# Get path for export SAV case
+	sav_name, _ = os.path.splitext(os.path.basename(sav_case))
+	temp_sav_case = os.path.join(local_temp_folder, '{}_{}.sav'.format(sav_name, local_uid))
+
+	# Initialise PSSE and load SAV case
 	psse = g74.psse.PsseControl()
 	psse.load_data_case(pth_sav=sav_case)
 
+	# Get handle to logger and determine whether running for PSSE or from Python
 	local_logger.app = psse
 	print('Running from PSSE status is: {}'.format(logger.app.run_in_psse))
 	local_logger.info('Running from PSSE status is: {}'.format(logger.app.run_in_psse))
+	local_logger.info('Took {:.2f} seconds to initialise PSSe and load SAV case'.format(time.time()-t))
+	t = time.time()
 
-	t2 = time.time() - t1
-	t1 = time.time()
-
-	# Carry out BKDY calculation
+	# Create the files for the existing machines that will be used for the BKDY fault study
 	bkdy = g74.psse.BkdyFaultStudy(psse_control=psse)
 	bkdy.create_breaker_duty_file(target_path=temp_bkd_file)
-
-	t3 = time.time() - t1
-	t1 = time.time()
+	local_logger.info('Took {:.2f} seconds to create BKDY files for machines'.format(time.time()-t))
+	t = time.time()
 
 	# Update model to include contribution from embedded machines
 	g74_data = g74.psse.G74FaultInfeed()
 	g74_data.identify_machine_parameters()
 	g74_data.calculate_machine_mva_values()
+	local_logger.info(
+		(
+			'Took {:.2f} seconds to add G74 machines that represent contribution from embedded load'
+		).format(time.time()-t)
+	)
+	t = time.time()
 
-	t4 = time.time() - t1
-	t1 = time.time()
+	# Save a temporary SAV case if necessary
+	if temp_sav_case:
+		psse.save_data_case(pth_sav=temp_sav_case)
 
-	# Save temporary SAV case
-	psse.save_data_case(pth_sav=export_sav_case)
-
+	# TODO:  At this point want to add in also IEC fault study for 3Ph and LG
+	# Carry out fault current study for each time step
 	df = bkdy.calculate_fault_currents(
 		fault_times=fault_times, g74_infeed=g74_data,
 		# #buses=buses_to_fault, delete=False
@@ -76,21 +89,22 @@ def bkdy_study(
 		delete=True
 	)
 
-	# Save temporary SAV case
-	psse.save_data_case(pth_sav=export_sav_case)
-
-	t5 = time.time() - t1
-	t1 = time.time()
+	# Save temporary SAV case (if necessary)
+	if temp_sav_case:
+		psse.save_data_case(pth_sav=temp_sav_case)
+	local_logger.info('Took {:.2f} seconds to carry out all fault current studies.'.format(time.time() - t))
+	t = time.time()
 
 	# Export results to excel
 	with pd.ExcelWriter(path=excel_file) as writer:
 		df.to_excel(writer, sheet_name='Fault I')
 		df.T.to_excel(writer, sheet_name='Fault I Transposed')
-	local_logger.info('Excel workbook written to: {}'.format(excel_file))
-	t6 = time.time() - t1
+	local_logger.info('Results written to Excel workbook: {}'.format(excel_file))
+	local_logger.info('Took {:.2f} seconds to save results'.format(time.time()-t))
+	t = time.time()
 
 	# Export tabulated data to PSSE
-	# TODO: Decide if this would be useful and how to format
+	# TODO: Export tabulated data directly to PSSE window
 
 	# Will reload original SAV case if required
 	if reload_sav:
@@ -109,13 +123,24 @@ def bkdy_study(
 		msg1 = '\n'.join(['\t - {}'.format(bus) for bus in set(bkdy.unreliable_faulted_buses)])
 		logger.warning('{}\n{}'.format(msg0, msg1))
 
-	return t2, t3, t4, t5, t6
+	local_logger.info(
+		'Took {:.2f} seconds to reload SAV case and export warning messages (if any)'.format(time.time()-t)
+	)
+
+	return None
 
 
 if __name__ == '__main__':
-	# Create logger
+	"""
+		This is the main block of code that will be run if this script is run directly
+	"""
+	# Time stamp for performance checking
+	t0 = time.time()
+
+	# Produce unique identifier for logger
 	uid = 'BKDY_{}'.format(time.strftime('%Y%m%d_%H%M%S'))
-	# Check temp folder exists and if not create
+
+	# Check temp folder exists to store log files in and if not create appropriate folders
 	script_path = os.path.realpath(__file__)
 	script_folder = os.path.dirname(script_path)
 	temp_folder = os.path.join(script_folder, 'temp')
@@ -123,39 +148,32 @@ if __name__ == '__main__':
 		os.mkdir(temp_folder)
 	logger = g74.Logger(pth_logs=temp_folder, uid=uid, debug=constants.DEBUG_MODE)
 
-	t0 = time.time()
 	# Run main study
 	logger.info('Study started')
-	# Load user interface
+	# Load GUI and ask user to select required inputs
 	gui = g74.gui.MainGUI()
 
+	# TODO: Get SAV case from PSSE if running directly
+	# Get path to SAV case being faulted
+	pth_sav_case = gui.sav_case
+	# TODO: If running directly then warn user that any changes since the previous SAV will now be saved
 	# Whether SAV case should be reloaded
 	reload_sav_case = gui.bo_reload_sav.get()
 
-	# TODO: Get SAV case from GUI and also initially save it so that it can be reloaded on completion
-
-	pth_sav_case = gui.sav_case
+	# Get parameters from GUI
 	faults = gui.fault_times
 	target_file = gui.target_file
-	sav_name, _ = os.path.splitext(os.path.basename(pth_sav_case))
-	pth_sav_case_export = os.path.join(temp_folder, '{}.sav'.format(sav_name))
 	buses_to_fault = gui.selected_busbars
 	open_excel = gui.bo_open_excel.get()
 
-	times = bkdy_study(
-		sav_case=pth_sav_case, local_temp_folder=temp_folder, excel_file=target_file,
-		export_sav_case=pth_sav_case_export, fault_times=faults, buses=buses_to_fault,
-		reload_sav=reload_sav_case, local_logger=logger
+	fault_study(
+		local_uid=uid, sav_case=pth_sav_case, local_temp_folder=temp_folder, excel_file=target_file,
+		fault_times=faults, buses=buses_to_fault, reload_sav=reload_sav_case, local_logger=logger
 	)
 
-	logger.info('Took {:.2f} seconds to initialise PSSE'.format(times[0]))
-	logger.info('Took {:.2f} seconds to create BKDY files for machines'.format(times[1]))
-	logger.info('Took {:.2f} seconds to add G74 machines'.format(times[2]))
-	logger.info('Took {:.2f} seconds to carry out fault study and save cases'.format(times[3]))
-	logger.info('Took {:.2f} seconds to export to excel'.format(times[4]))
-
 	# Open the exported excel if setting is as such
-	# TODO: Detect if already open and if so save with a different name and open
+	# TODO: Alternatively, adjust to just display in an instance of excel rather than having to save the results
+	# TODO: Detect if already open and if so, warn user and save with a different name
 	if open_excel:
 		os.startfile(target_file)
 

@@ -1994,8 +1994,9 @@ class G74FaultInfeed:
 class IecFaults:
 	"""
 		Class for carrying out IEC fault current calculations and returning the required data
+	TODO:  Need to implement an initial stage to determine the DC component and the peak component
+	TODO: Validate IEC method for 3Ph and LG conforms with G74
 	"""
-	# TODO:  Need to implement an initial stage to determine the DC component and the peak component
 	def __init__(self, psse, buses=list()):
 		"""
 			List of busbars to consider for IEC fault current calculations
