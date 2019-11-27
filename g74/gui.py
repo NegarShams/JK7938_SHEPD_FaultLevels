@@ -8,11 +8,15 @@
 ###																													###
 #######################################################################################################################
 """
+# General imports
 import Tkinter as Tk
 import tkFileDialog
-
+import tkMessageBox
 import os
 import logging
+import math
+
+# Package specific imports
 import g74
 import g74.constants as constants
 
@@ -27,19 +31,22 @@ class MainGUI:
 			Initialise GUI
 		:param str title: (optional) - Title to be used for main window
 		:param str sav_case: (optional) - Full path to the existing SAV case
-		TODO: Add option to reload initial SAV case on completion (default to ticked)
 		TODO: Add help button which loads work-instruction
-		TODO: Add PSC logo and title to GUI
-		TODO: Add tooltips
-		TODO: Potential option for parallel processing where PSSE prepares the model once SAV case selected and user
-		TODO:	is still selecting busbars but very hard to implement.
+		TODO: Add PSC logo see:  https://stackoverflow.com/questions/23773825/how-can-change-the-logo-of-tkinter-gui-screen)
+		TODO: Add PSC contact details somewhere
+		TODO: (low priority) Potential option for parallel processing where PSSE prepares the model once SAV case selected
+		TODO: 	and user is still selecting busbars but very hard to implement.
+		TODO: (low priority) Additional parameters options to select some constants (kA vs A output)
 		"""
 		# Get logger handle
 		self.logger = logging.getLogger(constants.Logging.logger_name)
+		self.abort = False
 
 		# Initialise constants and Tk window
 		self.master = Tk.Tk()
 		self.master.title(title)
+		# Ensure that on_closing is processed correctly
+		self.master.protocol("WM_DELETE_WINDOW", self.on_closing)
 
 		self.fault_times = list()
 		# General constants which need to be initialised
@@ -171,7 +178,7 @@ class MainGUI:
 			text=lbl_button,
 			command=self.edit_busbars_list)
 		self.cmd_edit_busbars.grid(row=row, column=col)
-		self.cmd_edit_busbars.config(state='disabled')
+		# #self.cmd_edit_busbars.config(state='disabled')
 		CreateToolTip(widget=self.cmd_edit_busbars, text=(
 			'A new window will popup which allows the busbars list to be edited / reviewed\n'
 			'TODO: Code has not been written for this yet'
@@ -252,6 +259,7 @@ class MainGUI:
 			False,
 			False
 		)
+		i = 0
 		for i, lbl in enumerate(labels):
 			# Defaults assuming that all faults will be calculated
 			boolean_vars[i].set(1)
@@ -304,10 +312,6 @@ class MainGUI:
 		# Update results path to include this name
 		self.results_pth = os.path.dirname(file_path)
 
-		# Enable button to allow popup of busbars to be edited to be created
-		# TODO: Create list of busbars that can be edited / deleted
-		# TODO: Obtain list of busbars from user interface
-		self.cmd_edit_busbars.config(state='disabled')
 		return None
 
 	def edit_busbars_list(self):
@@ -317,7 +321,13 @@ class MainGUI:
 		:return None:
 		"""
 		# TODO: Write a pop-up window that will allow busbars list to be edited / manually populated
-		pass
+		# Create new window to house the busbars list and ensure it pops up on top of everything else
+		busbars_window = Tk.Toplevel(self.master)
+		busbars_window.attributes('-topmost', 'true')
+		bus_data = BusbarsWindow(master=busbars_window, busbars=self.selected_busbars)
+		# Add entry boxes and populate busbars
+		bus_data.add_entry_boxes()
+		bus_data.populate_busbars()
 
 	def select_sav_case(self):
 		"""
@@ -379,6 +389,176 @@ class MainGUI:
 		self.master.destroy()
 		return None
 
+	def on_closing(self):
+		"""
+			Function runs when window is closed to determine if user actually wants to cancel running of study
+		:return None:
+		"""
+		# Ask user to confirm that they actually want to close the window
+		result = tkMessageBox.askquestion(
+			title='Exit fault study?',
+			message='Are you sure you want to stop this fault study?',
+			icon='warning'
+		)
+
+		# Test what option the user provided
+		if result == 'yes':
+			# Close window
+			self.master.destroy()
+			self.abort = True
+		else:
+			return None
+
+
+class BusbarsWindow:
+	"""
+		Produces a new window which is used to contain a list of busbars which can be edited by the user and
+		then adjusted to produce the required output.
+	"""
+	def __init__(self, master, busbars=list()):
+		"""
+			Produce window which contains details of all the busbars that will be faulted and the ability to edit
+			the busbars lists
+		:param Tk.Tk() master:  This is the main window master which this one will be popped up on-top of
+		:param list busbars:  List of busbars to be faulted will initially be populated into popup
+		"""
+		# Define initial values
+		self.busbars = busbars
+		self.entries = dict()
+
+		# Get constants for how many busbars to display horizontally and vertically
+		self.columns = constants.GUI.busbar_columns
+		self.vertical_busbars = constants.GUI.vertical_busbars
+
+		# Ensure that on_closing is processed correctly
+		self.master = master
+		self.master.protocol("WM_DELETE_WINDOW", self.on_closing)
+		self.master.title = 'Identified Busbars'
+
+		# Add label telling what is displayed in the box below
+		lbl = Tk.Label(self.master, text='Edit busbar numbers to be faulted')
+		lbl.grid(row=0, column=0)
+		_ = CreateToolTip(lbl, text='Add or delete busbars to the list below and close window to continue.')
+
+		# Produce a temporary frame which will house the entry boxes and place it in the window
+		# TODO: May need to define height and width in real time
+		busbar_frame = Tk.Frame(self.master, relief=Tk.GROOVE, bd=1)
+		busbar_frame.grid(row=1, column=0)
+
+		# Create a canvas into which the busbar_frame will be housed so that scroll bars can be added for the
+		# busbar list
+		self.canvas = Tk.Canvas(busbar_frame)
+		# Add the canvas into a new frame
+		self.entry_frame = Tk.Frame(self.canvas)
+		# Create scroll bars which will control the busbar_frame within the canvas and configure the controls
+		busbar_scrollbar = Tk.Scrollbar(busbar_frame, orient="vertical", command=self.canvas.yview)
+		self.canvas.configure(yscrollcommand=busbar_scrollbar.set)
+
+		# Locate the scroll bars on the right hand side of the canvas and locate canvas within newly created frame
+		busbar_scrollbar.pack(side="right", fill="y")
+		_ = CreateToolTip(busbar_scrollbar, text=(
+			'If more busbars are needed then once out of space, close window and reopen to create additional space.'
+		))
+		self.canvas.pack(side="left")
+		self.canvas.create_window((0, 0), window=self.entry_frame, anchor='nw')
+
+		# Bind the action of the scrollbar with the movement of the canvas
+		self.entry_frame.bind("<Configure>", self.canvas_scroll_function)
+
+	def canvas_scroll_function(self, _event):
+		"""
+			Function to control what happens when the frame is scrolled
+		:return:
+		"""
+		# Calculate the required width assuming busbar entry box size width is 60 pixels
+		width = self.columns * 60
+		# Calculate the required height assuming busbar entry box size height is 20 pixels
+		height = self.vertical_busbars * 20
+		self.canvas.configure(scrollregion=self.canvas.bbox("all"), width=width, height=height)
+
+	def add_entry_boxes(self, spare_busbars=constants.GUI.empty_busbars):
+		"""
+			Adds the entry boxes ready to be populated with busbars
+		:param int spare_busbars:  (optional=30) Number of extra rows to allow for additional busbars
+		:return:
+		"""
+		# Calculate the number of entry boxes that are necessary allowing for extra number of busbars
+		# Has to convert to float to ensure rounds up when dividing
+		table_height = int(math.ceil(float(len(self.busbars)+spare_busbars) / float(self.columns)))
+		counter = 0
+
+		# Loop through each row and column adding a new entry box
+		for row in xrange(table_height):
+			for column in xrange(self.columns):
+				# Create entry box for each busbar of the required size
+				self.entries[counter] = Tk.Entry(self.entry_frame, width=constants.GUI.busbar_box_size)
+				self.entries[counter].grid(row=row, column=column)
+				counter += 1
+
+		return None
+
+	def populate_busbars(self):
+		"""
+			Function will replace all entries in the box with busbars provided on input
+		:return None:
+		"""
+		# Populate entry box until all busbars reached
+		for i, bus in enumerate(self.busbars):
+			self.entries[i].insert(0, str(bus))
+
+		return None
+
+	def on_closing(self):
+		"""
+			Function will run when closed and update the list of busbars to be faulted
+		:return None:
+		"""
+		busbars = list()
+		for entry in self.entries.values():
+			# Retrieve the value and continue to next entry box if empty
+			value = entry.get()
+			if value == '':
+				continue
+
+			# Try and convert the string input to an integer
+			try:
+				busbar = int(value)
+				busbars.append(busbar)
+			except ValueError:
+				# There is an error with the value that has been provided, ask the user if they want to continue or
+				# correct this number
+				result = tkMessageBox.askquestion(
+					title='Continue without busbar?',
+					message=(
+						'Unable to convert the busbar entry <{}> to a busbar number, do you want to ignore this value?'
+					).format(entry.get()),
+					icon='warning'
+				)
+
+				# Test what option the user provided
+				if result == 'yes':
+					# Skip this value
+					continue
+				else:
+					# Give the user an option to correct
+					print('Please correct the value {} to a busbar number'.format(value))
+					return None
+
+		# Identify busbars which either need to be removed or added to the list ensuring no duplicates
+		busbars_to_remove = set(self.busbars)-set(busbars)
+		busbars_to_add = set(busbars)-set(self.busbars)
+
+		# Loop through each busbar and delete those which are no longer included
+		for bus in busbars_to_remove:
+			self.busbars.remove(bus)
+		# Loop through each busbar and add those which are new
+		for bus in busbars_to_add:
+			self.busbars.append(bus)
+
+		# Destroy popup window
+		self.master.destroy()
+		return None
+
 
 class CreateToolTip(object):
 	"""
@@ -388,11 +568,11 @@ class CreateToolTip(object):
 	def __init__(self, widget, text='widget info'):
 		"""
 			Establish link with tooltip
-		:param widget:  Tkinter elemnt that tooltip should be associated with
+		:param widget:  Tkinter element that tooltip should be associated with
 		:param str text:  Message to display when hovering over button
 		"""
-		self.wait_time = 500     #miliseconds
-		self.wrap_length = 450   #pixels
+		self.wait_time = 500     # milliseconds
+		self.wrap_length = 450   # pixels
 		self.widget = widget
 		self.text = text
 		self.widget.bind("<Enter>", self.enter)
@@ -428,12 +608,13 @@ class CreateToolTip(object):
 		y += self.widget.winfo_rooty() + 20
 		# creates a top level window
 		self.tw = Tk.Toplevel(self.widget)
+		self.tw.attributes('-topmost', 'true')
 		# Leaves only the label and removes the app window
 		self.tw.wm_overrideredirect(True)
 		self.tw.wm_geometry("+%d+%d" % (x, y))
 		label = Tk.Label(
 			self.tw, text=self.text, justify='left', background="#ffffff", relief='solid', borderwidth=1,
-			wraplength = self.wrap_length
+			wraplength=self.wrap_length
 		)
 		label.pack(ipadx=1)
 

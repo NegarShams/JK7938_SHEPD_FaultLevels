@@ -19,7 +19,7 @@ import time
 import inspect
 import subprocess
 
-# TODO: May be better to actually embed this within G74
+# Location where local packages will be installed
 local_packages = os.path.join(os.path.dirname(__file__), '..', 'local_packages')
 # Won't be searched unless it exists when added to system path
 if not os.path.exists(local_packages):

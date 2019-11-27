@@ -153,28 +153,32 @@ if __name__ == '__main__':
 	# Load GUI and ask user to select required inputs
 	gui = g74.gui.MainGUI()
 
-	# TODO: Get SAV case from PSSE if running directly
-	# Get path to SAV case being faulted
-	pth_sav_case = gui.sav_case
-	# TODO: If running directly then warn user that any changes since the previous SAV will now be saved
-	# Whether SAV case should be reloaded
-	reload_sav_case = gui.bo_reload_sav.get()
+	# Determine whether user aborted study rather than selecting SAV case
+	if gui.abort:
+		logger.warning('User interface closed by user and study aborted after {:.2f} seconds'.format(time.time()-t0))
+	else:
+		# TODO: Get SAV case from PSSE if running directly
+		# Get path to SAV case being faulted
+		pth_sav_case = gui.sav_case
+		# TODO: If running directly then warn user that any changes since the previous SAV will now be saved
+		# Whether SAV case should be reloaded
+		reload_sav_case = gui.bo_reload_sav.get()
 
-	# Get parameters from GUI
-	faults = gui.fault_times
-	target_file = gui.target_file
-	buses_to_fault = gui.selected_busbars
-	open_excel = gui.bo_open_excel.get()
+		# Get parameters from GUI
+		faults = gui.fault_times
+		target_file = gui.target_file
+		buses_to_fault = gui.selected_busbars
+		open_excel = gui.bo_open_excel.get()
 
-	fault_study(
-		local_uid=uid, sav_case=pth_sav_case, local_temp_folder=temp_folder, excel_file=target_file,
-		fault_times=faults, buses=buses_to_fault, reload_sav=reload_sav_case, local_logger=logger
-	)
+		fault_study(
+			local_uid=uid, sav_case=pth_sav_case, local_temp_folder=temp_folder, excel_file=target_file,
+			fault_times=faults, buses=buses_to_fault, reload_sav=reload_sav_case, local_logger=logger
+		)
 
-	# Open the exported excel if setting is as such
-	# TODO: Alternatively, adjust to just display in an instance of excel rather than having to save the results
-	# TODO: Detect if already open and if so, warn user and save with a different name
-	if open_excel:
-		os.startfile(target_file)
+		# Open the exported excel if setting is as such
+		# TODO: Alternatively, adjust to just display in an instance of excel rather than having to save the results
+		# TODO: Detect if already open and if so, warn user and save with a different name
+		if open_excel:
+			os.startfile(target_file)
 
-	logger.info('Complete with total study time of {:.2f} seconds'.format(time.time()-t0))
+		logger.info('Complete with total study time of {:.2f} seconds'.format(time.time()-t0))

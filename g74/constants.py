@@ -15,8 +15,6 @@ import re
 # Set to True to run in debug mode and therefore collect all output to window
 DEBUG_MODE = False
 
-# TODO: Change fault time to be either a GUI input or a constant
-fault_time = 0.06
 # TODO: Define as a constant input
 convert_to_kA = True
 
@@ -57,6 +55,14 @@ class GUI:
 
 	# Open excel with completed files
 	open_excel = 1
+
+	# Number of characters to fit into entry box for busbars
+	busbar_box_size = 9
+
+	# Number of busbar entry boxes on each row
+	busbar_columns = 3
+	vertical_busbars = 10
+	empty_busbars = 40
 
 	def __init__(self):
 		"""
@@ -169,7 +175,6 @@ class BkdyFileOutput:
 	r = 'R (p.u. on {:.0f} MVA)'.format(base_mva)
 
 	# Error flag if Vpk returns infinity
-	# TODO:  Check if this is still used
 	infinity_error = '*******'
 
 	# Regex search expression broken down as follows:
@@ -187,7 +192,7 @@ class BkdyFileOutput:
 	reg_search = re.compile('(Infin)|(ity)|(\*{9})|(-?\d\.\d{4,5}(?!\d+\.))|(\d{1,3}\.\d{2})|(\d+\.\d)')
 	# The following terms are used to confirm whether there are values returned which relate to an infinite value and
 	# handled correctly.
-	# TODO: May need to add an aditional check to confirm that no values are returned as infinity when they shouldn't be
+	# TODO: May need to add an additional check to confirm that no values are returned as infinity when they shouldn't be
 	nan_term1 = 'Infin'
 	nan_term2 = 'ity'
 	nan_term3 = '*' * 9
@@ -375,7 +380,7 @@ class G74:
 	x_r_11 = 2.76
 	# MVA contribution of equivalent motor per MVA of connected load (some ratio of these may be needed
 	# based on whether load is assumed to be LV or HV connected.
-	# TODO: Determine ratios of LV and HV connected load
+	# NOTE - These values are not used and instead the values determined by SHETL are used
 	label_mva = 'Machine Base'
 	mva_lv = 1.0
 	mva_hv = 2.6
@@ -397,20 +402,11 @@ class G74:
 
 	# Time constants
 	t11 = 0.04
-	# ## TODO: Confirm this time constant is sufficient, should have decayed to 0 my 120 ms
-	# #t2 = 0.12
 
 	# Calculation of R and X'' for equivalent machine connected at 33kV and assumes
 	# Z=1.0 which is then multiplied by the MVA rating of the machine
 	rpos = (1.0/(1.0+x_r_33**2))**0.5
-	# #rneg = rpos
 	x11 = (1.0-rpos**2)**0.5
-	# #xneg = x11
-	# x1 and X calculated as per G74 equations
-	# #x1 = 1.0/((1.0/x11)*math.exp(-fault_time/t1))
-	# #x1 = 1.0/((1.0/x11)*math.exp(-t1/t1))
-	# ## Very high value for X1 and R0, X0 to ensure decays to 0
-	# #x = 10000.0
 	rzero = 10000.0
 	xzero = 10000.0
 
