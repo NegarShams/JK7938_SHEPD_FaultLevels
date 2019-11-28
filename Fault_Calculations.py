@@ -25,13 +25,13 @@ __status__ = 'In Development - Beta'
 
 
 def fault_study(
-		psse,
+		psse_handler,
 		local_uid, sav_case, local_temp_folder, excel_file, fault_times, buses, local_logger, reload_sav=True
 ):
 	"""
 		Run G74 fault study calculation using PSSE BKDY or IEC methods and obtain the
 		fault current at all the busbars that have been listed.
-	:param g74.PsseControl psse:  Handle for the psse interface engine
+	:param g74.PsseControl psse_handler:  Handle for the psse interface engine
 	:param str local_uid:  Unique identifier for this study used to append to files
 	:param str sav_case:  Full path to the SAV case that should be used for the fault study
 	:param str local_temp_folder:  Local temporary folder into which to save temporary data
@@ -51,17 +51,17 @@ def fault_study(
 	temp_sav_case = os.path.join(local_temp_folder, '{}_{}.sav'.format(sav_name, local_uid))
 
 	# Initialise PSSE and load SAV case
-	psse.load_data_case(pth_sav=sav_case)
+	psse_handler.load_data_case(pth_sav=sav_case)
 
 	# Get handle to logger and determine whether running for PSSE or from Python
-	local_logger.app = psse
+	local_logger.app = psse_handler
 	print('Running from PSSE status is: {}'.format(logger.app.run_in_psse))
 	local_logger.info('Running from PSSE status is: {}'.format(logger.app.run_in_psse))
 	local_logger.info('Took {:.2f} seconds to initialise PSSe and load SAV case'.format(time.time()-t))
 	t = time.time()
 
 	# Create the files for the existing machines that will be used for the BKDY fault study
-	bkdy = g74.psse.BkdyFaultStudy(psse_control=psse)
+	bkdy = g74.psse.BkdyFaultStudy(psse_control=psse_handler)
 	bkdy.create_breaker_duty_file(target_path=temp_bkd_file)
 	local_logger.info('Took {:.2f} seconds to create BKDY files for machines'.format(time.time()-t))
 	t = time.time()
@@ -79,7 +79,7 @@ def fault_study(
 
 	# Save a temporary SAV case if necessary
 	if temp_sav_case:
-		psse.save_data_case(pth_sav=temp_sav_case)
+		psse_handler.save_data_case(pth_sav=temp_sav_case)
 
 	# TODO:  At this point want to add in also IEC fault study for 3Ph and LG
 	# Carry out fault current study for each time step
@@ -92,7 +92,7 @@ def fault_study(
 
 	# Save temporary SAV case (if necessary)
 	if temp_sav_case:
-		psse.save_data_case(pth_sav=temp_sav_case)
+		psse_handler.save_data_case(pth_sav=temp_sav_case)
 	local_logger.info('Took {:.2f} seconds to carry out all fault current studies.'.format(time.time() - t))
 	t = time.time()
 
@@ -109,11 +109,11 @@ def fault_study(
 
 	# Will reload original SAV case if required
 	if reload_sav:
-		psse.load_data_case(pth_sav=pth_sav_case)
+		psse_handler.load_data_case(pth_sav=pth_sav_case)
 		local_logger.debug('Original sav case: {} reloaded'.format(pth_sav_case))
 
 	# Restore output to defaults
-	psse.change_output(destination=1)
+	psse_handler.change_output(destination=1)
 
 	# Produce error message at end of output to report potential busbar fault error issues
 	if bkdy.unreliable_faulted_buses:
@@ -131,18 +131,18 @@ def fault_study(
 	return None
 
 
-def get_busbars(psse):
+def get_busbars(psse_handler):
 	"""
 		Determines if PSSE is running and if so will return a list of busbars
-	:param g74.PsseControl psse:  Handle to contrller for psse
+	:param g74.PsseControl psse_handler:  Handle to controller for psse
 	:return:
 	"""
-	psse.running_from_psse()
-	if psse.run_in_psse:
+	psse_handler.running_from_psse()
+	if psse_handler.run_in_psse:
 		# Initialise PSSE so have access to all required variables
-		_ = g74.psse.InitialisePsspy().initialise_psse(running_from_psse=psse.run_in_psse)
+		_ = g74.psse.InitialisePsspy().initialise_psse(running_from_psse=psse_handler.run_in_psse)
 		busbars = g74.psse.PsseSlider().get_selected_busbars()
-		sav_case = psse.get_current_sav_case()
+		sav_case = psse_handler.get_current_sav_case()
 	else:
 		busbars = list()
 		sav_case = None
@@ -200,7 +200,7 @@ if __name__ == '__main__':
 		open_excel = gui.bo_open_excel.get()
 
 		fault_study(
-			psse=psse,
+			psse_handler=psse,
 			local_uid=uid, sav_case=pth_sav_case, local_temp_folder=temp_folder, excel_file=target_file,
 			fault_times=faults, buses=buses_to_fault, reload_sav=reload_sav_case, local_logger=logger,
 		)
