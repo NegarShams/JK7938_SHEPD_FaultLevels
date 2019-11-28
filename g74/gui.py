@@ -26,11 +26,12 @@ class MainGUI:
 		Main class to produce the GUI
 		Allows the user to select the busbars and methodology to be applied in the fault current calculations
 	"""
-	def __init__(self, title=constants.GUI.gui_name, sav_case=str()):
+	def __init__(self, title=constants.GUI.gui_name, sav_case=str(), busbars=list()):
 		"""
 			Initialise GUI
 		:param str title: (optional) - Title to be used for main window
 		:param str sav_case: (optional) - Full path to the existing SAV case
+		:param list busbars:  (optional) - List of busbars selected from slider
 		TODO: Add help button which loads work-instruction
 		TODO: Add PSC logo see:  https://stackoverflow.com/questions/23773825/how-can-change-the-logo-of-tkinter-gui-screen)
 		TODO: Add PSC contact details somewhere
@@ -54,7 +55,7 @@ class MainGUI:
 		self._col = 0
 
 		# Will be populated with a list of busbars to be faulted
-		self.selected_busbars = list()
+		self.selected_busbars = busbars
 		# Target file that results will be exported to
 		self.target_file = str()
 		self.results_pth = os.path.dirname(os.path.realpath(__file__))

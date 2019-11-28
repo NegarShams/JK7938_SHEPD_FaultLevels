@@ -18,12 +18,14 @@ import os
 import logging
 import pandas as pd
 import numpy as np
-import re
 import math
 import time
+import re
 
 # Version of PSSE that will be initialised
 DEFAULT_PSSE_VERSION = 33
+
+# TODO: Report error for busbars which do not actually exist in model
 
 
 def extract_values(line, expected_length=0):
@@ -110,6 +112,7 @@ class InitialisePsspy:
 		global psspy
 		global redirect
 		global pssarrays
+		global sliderPy
 		try:
 			# Import psspy used for manipulating PSSE
 			import psspy
@@ -143,6 +146,19 @@ class InitialisePsspy:
 				).format(self.psse_py_path, self.c.pssarrays_to_find)
 			)
 			raise ImportError('Unable to initialise PSSARRAYS used for IEC fault current data extraction')
+
+		# Separate error handling import since need is not essential
+		try:
+			# Import pssarrays used for data extraction from PSSE
+			import sliderPy
+			sliderPy = reload(sliderPy)
+			self.sliderPy = sliderPy
+		except ImportError:
+			self.sliderPy = None
+			self.logger.warning(
+				'Unable to import sliderPy and therefore cannot interact with the PSSE sliders to obtain busbar'
+				'numbers.  The script will continue to work but will not be pre-populated with busbars.'
+			)
 
 	def set_psse_path(self, reset=False):
 		"""
@@ -710,6 +726,16 @@ class PsseControl:
 				# If the executable was one of the above, it is a Python session.
 				self.run_in_psse = False
 
+	def get_current_sav_case(self):
+		"""
+			Retrieves the full path to the active sav case if one exists
+		:return str sav_case:
+		"""
+		sav_case, _ = psspy.sfiles()
+		self.logger.debug('PSSE currently active save case is: {}'.format(sav_case))
+
+		return sav_case
+
 	def load_data_case(self, pth_sav=None):
 		"""
 			Load the study case that PSSE should be working with
@@ -1193,6 +1219,54 @@ class PsseControl:
 		_ = psspy.report_output(islct=1)
 
 
+class PsseSlider:
+	"""
+		Script to deal with interfacing with the PSSE slider diagram to identify attributes, selected items, etc.
+	"""
+	def __init__(self):
+		"""
+			Initialise class
+		"""
+		self.logger = logging.getLogger(constants.Logging.logger_name)
+
+	def get_selected_busbars(self):
+		"""
+			Function will return a list of all the busbars which have been selected in the slider as integers
+		:return list busbars:
+		"""
+		# Get handle for all components in slider
+		doc = sliderPy.GetActiveDocument()
+		diagram = doc.GetDiagram()
+		components = diagram.GetComponents()
+
+		# TODO: Find name of diagram and number of components to add to log report
+		busbars = list()
+		for item in components:
+			# TODO: Determine if type is busbar and then get name and append to list
+			if item.IsSelected() and item.GetComponentType() is sliderPy.ComponentType.Symbol:
+				item_details = item.GetMapString()
+				# Get busbar number if a busbar rather than circuit
+				if 'BU' in item_details:
+					try:
+						busbars.append(int(re.sub('BU', '', item_details)))
+					except ValueError:
+						self.logger.warning(
+							(
+								'Unable to obtain the busbar number from {} which relates to one of the busbars '
+								'already selected.  This number will need to be added again manually'
+							).format(item_details)
+						)
+
+		# Busbars already selected in slider info
+		if busbars:
+			msg = '\n'.join(['\t - Busbar: {}'.format(bus) for bus in busbars])
+			self.logger.info('The following busbars will be added to the fault list:\n{}'.format(msg))
+		else:
+			self.logger.info('No busbars selected in slider')
+
+		return busbars
+
+
 class BkdyFaultStudy:
 	"""
 		Class that contains all the routines necessary for the BKDY fault study method
@@ -1293,7 +1367,6 @@ class BkdyFaultStudy:
 		:return:
 		"""
 		# TODO: Define bus subsystem to only return faults for particular buses
-		# TODO:
 
 		# Convert model
 		self.psse.convert_sav_case()

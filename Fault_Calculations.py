@@ -25,11 +25,13 @@ __status__ = 'In Development - Beta'
 
 
 def fault_study(
+		psse,
 		local_uid, sav_case, local_temp_folder, excel_file, fault_times, buses, local_logger, reload_sav=True
 ):
 	"""
 		Run G74 fault study calculation using PSSE BKDY or IEC methods and obtain the
 		fault current at all the busbars that have been listed.
+	:param g74.PsseControl psse:  Handle for the psse interface engine
 	:param str local_uid:  Unique identifier for this study used to append to files
 	:param str sav_case:  Full path to the SAV case that should be used for the fault study
 	:param str local_temp_folder:  Local temporary folder into which to save temporary data
@@ -49,7 +51,6 @@ def fault_study(
 	temp_sav_case = os.path.join(local_temp_folder, '{}_{}.sav'.format(sav_name, local_uid))
 
 	# Initialise PSSE and load SAV case
-	psse = g74.psse.PsseControl()
 	psse.load_data_case(pth_sav=sav_case)
 
 	# Get handle to logger and determine whether running for PSSE or from Python
@@ -130,6 +131,25 @@ def fault_study(
 	return None
 
 
+def get_busbars(psse):
+	"""
+		Determines if PSSE is running and if so will return a list of busbars
+	:param g74.PsseControl psse:  Handle to contrller for psse
+	:return:
+	"""
+	psse.running_from_psse()
+	if psse.run_in_psse:
+		# Initialise PSSE so have access to all required variables
+		_ = g74.psse.InitialisePsspy().initialise_psse(running_from_psse=psse.run_in_psse)
+		busbars = g74.psse.PsseSlider().get_selected_busbars()
+		sav_case = psse.get_current_sav_case()
+	else:
+		busbars = list()
+		sav_case = None
+
+	return busbars, sav_case
+
+
 if __name__ == '__main__':
 	"""
 		This is the main block of code that will be run if this script is run directly
@@ -150,17 +170,26 @@ if __name__ == '__main__':
 
 	# Run main study
 	logger.info('Study started')
+
+	# Check if PSSE is running and if so retrieve list of selected busbars, else return empty list
+	psse = g74.psse.PsseControl()
+	selected_busbars, current_sav_case = get_busbars(psse)
+
+	if current_sav_case:
+		# TODO: Better way to do this, maybe GUI popup asking user whether to save SAV case before making updates
+		logger.warning(
+			'If the current SAV case has not been saved prior to running study, changes will be lost when reloaded'
+		)
+
 	# Load GUI and ask user to select required inputs
-	gui = g74.gui.MainGUI()
+	gui = g74.gui.MainGUI(sav_case=current_sav_case, busbars=selected_busbars)
 
 	# Determine whether user aborted study rather than selecting SAV case
 	if gui.abort:
 		logger.warning('User interface closed by user and study aborted after {:.2f} seconds'.format(time.time()-t0))
 	else:
-		# TODO: Get SAV case from PSSE if running directly
 		# Get path to SAV case being faulted
 		pth_sav_case = gui.sav_case
-		# TODO: If running directly then warn user that any changes since the previous SAV will now be saved
 		# Whether SAV case should be reloaded
 		reload_sav_case = gui.bo_reload_sav.get()
 
@@ -171,8 +200,9 @@ if __name__ == '__main__':
 		open_excel = gui.bo_open_excel.get()
 
 		fault_study(
+			psse=psse,
 			local_uid=uid, sav_case=pth_sav_case, local_temp_folder=temp_folder, excel_file=target_file,
-			fault_times=faults, buses=buses_to_fault, reload_sav=reload_sav_case, local_logger=logger
+			fault_times=faults, buses=buses_to_fault, reload_sav=reload_sav_case, local_logger=logger,
 		)
 
 		# Open the exported excel if setting is as such
