@@ -1,7 +1,7 @@
 """
 #######################################################################################################################
-###											PSSE G7/4 Fault Studies													###
-###		Script sets up PSSE to carry out fault studies in line with requirements of ENA G7/4						###
+###											PSSE G74 Fault Studies													###
+###		Script sets up PSSE to carry out fault studies in line with requirements of ENA G74							###
 ###																													###
 ###		Code developed by David Mills (david.mills@PSCconsulting.com, +44 7899 984158) as part of PSC 		 		###
 ###		project JK7938 - SHEPD - studies and automation																###
@@ -40,7 +40,7 @@ except ImportError:
 		'Unable to import some packages because they may not have been installed, script will now install'
 		'missing packages but this may take some time, please be patient!!'
 	)
-	batch_path = os.path.join(os.path.dirname(__file__), '..', 'setup_SHEPD.bat')
+	batch_path = os.path.join(os.path.dirname(__file__), '..', 'JK7938_Missing_Packages.bat')
 	print('The following batch file will be run to install the packages: {}'.format(batch_path))
 	subprocess.call([batch_path])
 	print(

@@ -1,6 +1,6 @@
 """
 #######################################################################################################################
-###											PSSE G7/4 Fault Studies													###
+###											PSSE G74 Fault Studies													###
 ###		Unit tests associated with the processing and manipulation of files											###																													###
 ###																													###
 ###		Code developed by David Mills (david.mills@PSCconsulting.com, +44 7899 984158) as part of PSC 		 		###

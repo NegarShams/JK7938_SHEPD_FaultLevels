@@ -1,6 +1,6 @@
 """
 #######################################################################################################################
-###											PSSE G7/4 Fault Studies													###
+###											PSSE G74 Fault Studies													###
 ###		Test to ensure Python and PSSE install is working correctly													###
 ###																													###
 ###		Code developed by David Mills (david.mills@PSCconsulting.com, +44 7899 984158) as part of PSC 		 		###

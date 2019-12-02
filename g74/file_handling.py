@@ -1,7 +1,7 @@
 """
 #######################################################################################################################
-###											PSSE G7/4 Fault Studies													###
-###		Script sets up PSSE to carry out fault studies in line with requirements of ENA G7/4						###
+###											PSSE G74 Fault Studies													###
+###		Script sets up PSSE to carry out fault studies in line with requirements of ENA G74							###
 ###																													###
 ###		Code developed by David Mills (david.mills@PSCconsulting.com, +44 7899 984158) as part of PSC 		 		###
 ###		project JK7938 - SHEPD - studies and automation																###

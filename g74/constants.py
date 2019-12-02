@@ -1,7 +1,7 @@
 """
 #######################################################################################################################
-###											PSSE G7/4 Fault Studies													###
-###		Script sets up PSSE to carry out fault studies in line with requirements of ENA G7/4						###
+###											PSSE G74 Fault Studies													###
+###		Script sets up PSSE to carry out fault studies in line with requirements of ENA G74							###
 ###																													###
 ###		Code developed by David Mills (david.mills@PSCconsulting.com, +44 7899 984158) as part of PSC 		 		###
 ###		project JK7938 - SHEPD - studies and automation																###
@@ -46,7 +46,7 @@ class GUI:
 	"""
 		Constants for the user interface
 	"""
-	gui_name = 'PSC G7/4 Fault Current Tool'
+	gui_name = 'PSC G74 Fault Current Tool'
 	default_fault_times = '0.00, 0.01, 0.06'
 
 	# Default on whether the SAV case should be reloaded at the end of the fault

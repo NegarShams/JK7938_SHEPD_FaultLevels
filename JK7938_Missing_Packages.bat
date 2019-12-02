@@ -1,8 +1,8 @@
 REM
 REM ###################################################################################################################
-REM ###										PSSE G7/4 Fault Studies													###
-REM ###		Script sets up Python on SHEPD machines for use with PSSE and G7/4 script produced by PSC.              ###
-REM ###		This is necessary to make available the following packages to the G7/4 script:							###
+REM ###										PSSE G74 Fault Studies													###
+REM ###		Script sets up Python on SHEPD machines for use with PSSE and G74 script produced by PSC.               ###
+REM ###		This is necessary to make available the following packages to the G74 script:							###
 REM ###			- setuptools																						###
 REM ###			- six																								###
 REM ###			- numpy																								###
