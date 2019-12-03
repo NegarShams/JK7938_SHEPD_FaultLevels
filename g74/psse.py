@@ -682,6 +682,8 @@ class PsseControl:
 
 		# Boolean value used to determine whether output should be set to PSSE or Python
 		self.run_in_psse = None
+		# Determine whether running from PSSE or not
+		self.running_from_psse()
 
 	def change_output(self, destination):
 		"""
@@ -1412,13 +1414,14 @@ class BkdyFaultStudy:
 		# Empty dictionary that will be populated with DataFrames as they are processed
 		dfs = dict()
 		# Loops through each of the results and processes the files
-		for name, bkdy_file in self.bkdy_files.iteritems():
+		for fault_time, bkdy_file in self.bkdy_files.iteritems():
 			self.logger.debug(
-				'Processing the BKDY results for fault named: {} and stored in: {}'.format(name, bkdy_file)
+				'Processing the BKDY results for fault named: {} and stored in: {}'.format(fault_time, bkdy_file)
 			)
 			# Extract all data from file and delete file since no longer needed
 			df = bkdy_file.process_bkdy_output(delete=delete)
-			dfs[name] = df
+			# #name = '{} {}'.format(fault_time, constants.SHEPD.time_units)
+			dfs[fault_time] = df
 
 		# Combine results into a single DataFrame with an additional level to identify the fault by name.
 		# Subsequent data extraction then deals with processing the relevant data
@@ -1487,11 +1490,11 @@ class BkdyFaultStudy:
 		# TODO: Change this to use the temporary folder rather than script folder (same folder as BKDY and log file outputs)
 		current_script_path = os.path.dirname(os.path.realpath(__file__))
 		initial_fault_files = [
-			os.path.join(current_script_path, 'fault_ik_init{:.2f}{}'.format(x, constants.General.ext_csv))
+			os.path.join(current_script_path, 'fault_ik_init{:.5f}{}'.format(x, constants.General.ext_csv))
 			for x in fault_times
 		]
 		ac_decrement_files = [
-			os.path.join(current_script_path, 'fault_ik_decr{:.2f}{}'.format(x, constants.General.ext_csv))
+			os.path.join(current_script_path, 'fault_ik_decr{:.5f}{}'.format(x, constants.General.ext_csv))
 			for x in fault_times
 		]
 
@@ -1582,10 +1585,12 @@ class BkdyFaultStudy:
 				df_temp[constants.BkdyFileOutput.idc].pow(2)
 			).pow(0.5)
 
-			# Append to list
-			dfs[fault_time] = df_temp
+			# Produce a name for this set of results which includes the fault time in the desired units
+			name = '{} {}'.format(fault_time, constants.SHEPD.time_units)
+			# Add to DataFrame dictionary
+			dfs[name] = df_temp
 
-		df = pd.concat(dfs.values(), axis=1, keys=dfs.keys())
+		df = pd.concat(dfs.values(), axis=1, keys=dfs.keys(), names=constants.SHEPD.output_headers)
 		df.sort_index(axis=1, level=0, inplace=True, ascending=True)
 		return df
 
@@ -1606,7 +1611,10 @@ class BkdyFaultStudy:
 		df_bus_data.loc[:, c.bus_voltage] = bus_data.df.loc[:, bus_data.c.nominal]
 		df_bus_data.loc[:, c.pre_fault] = bus_data.df.loc[:, bus_data.c.voltage]
 		# Convert to MultiIndex
-		df_bus_data.columns = pd.MultiIndex.from_product([[c.node_label], df_bus_data.columns])
+		df_bus_data.columns = pd.MultiIndex.from_product(
+			[[c.node_label], df_bus_data.columns],
+			names=constants.SHEPD.output_headers
+		)
 
 		# Merge DataFrames together
 		df = pd.concat([df_bus_data, df], axis=1)

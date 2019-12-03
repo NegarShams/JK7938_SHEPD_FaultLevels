@@ -168,11 +168,15 @@ if __name__ == '__main__':
 		os.mkdir(temp_folder)
 	logger = g74.Logger(pth_logs=temp_folder, uid=uid, debug=constants.DEBUG_MODE)
 
+	# Check if PSSE is running and if so retrieve list of selected busbars, else return empty list
+	psse = g74.psse.PsseControl()
+
+	# Produce initial log messages and decorate appropriately
+	logger.log_colouring(run_in_psse=psse.run_in_psse)
+
 	# Run main study
 	logger.info('Study started')
 
-	# Check if PSSE is running and if so retrieve list of selected busbars, else return empty list
-	psse = g74.psse.PsseControl()
 	selected_busbars, current_sav_case = get_busbars(psse)
 
 	if current_sav_case:

@@ -208,7 +208,7 @@ class TestBkdyNonPSSEComponents(unittest.TestCase):
 		bkdy_file = test_module.BkdyFile(output_file=self.output_file, fault_time=0.01)
 
 		df = bkdy_file.process_bkdy_output()
-		self.assertAlmostEqual(df.loc[1, constants.BkdyFileOutput.ibasym], 1.6358, places=2)
+		self.assertAlmostEqual(df.loc[1, constants.BkdyFileOutput.ibasym], 1.6297, places=2)
 		self.assertAlmostEqual(df.loc[1501, constants.BkdyFileOutput.ip], 3.9073, places=2)
 		self.assertAlmostEqual(df.loc[5001, constants.BkdyFileOutput.ik11], 6.1801, places=2)
 		self.assertAlmostEqual(df.loc[5101, constants.BkdyFileOutput.ibsym], 3.7529, places=2)
@@ -572,16 +572,16 @@ class TestBkdyIntegration(unittest.TestCase):
 		# results file
 		df = pd.concat(dfs.values(), axis=1, keys=dfs.keys())
 		# DC value from method 1 should be as per BKDY output file and method 2 converted to 0.0
-		self.assertAlmostEqual(df.loc[bus, (ft2, constants.BkdyFileOutput.idc_method1)], 3.67120, places=3)
+		self.assertAlmostEqual(df.loc[bus, (ft2, constants.BkdyFileOutput.idc_method1)], 0.00000, places=3)
 		self.assertAlmostEqual(df.loc[bus, (ft2, constants.BkdyFileOutput.idc_method2)], 0.00000, places=3)
-		self.assertAlmostEqual(df.loc[bus, (ft1, constants.BkdyFileOutput.idc_method1)], 3.67120, places=3)
-		self.assertAlmostEqual(df.loc[bus, (ft1, constants.BkdyFileOutput.idc_method2)], 0.00000, places=3)
+		self.assertAlmostEqual(df.loc[bus, (ft1, constants.BkdyFileOutput.idc_method1)], 0.00060, places=3)
+		self.assertAlmostEqual(df.loc[bus, (ft1, constants.BkdyFileOutput.idc_method2)], 0.00060, places=3)
 
 		# Peak value from method 1 should be as per BKDY output file and method 2 converted to 0.0
-		self.assertAlmostEqual(df.loc[bus, (ft2, constants.BkdyFileOutput.ip_method1)], 7.36170, places=3)
-		self.assertAlmostEqual(df.loc[bus, (ft2, constants.BkdyFileOutput.ip_method2)], 0.00000, places=3)
-		self.assertAlmostEqual(df.loc[bus, (ft1, constants.BkdyFileOutput.ip_method1)], 7.36170, places=3)
-		self.assertAlmostEqual(df.loc[bus, (ft1, constants.BkdyFileOutput.ip_method2)], 0.00000, places=3)
+		self.assertAlmostEqual(df.loc[bus, (ft2, constants.BkdyFileOutput.ip_method1)], 0.06140, places=3)
+		self.assertAlmostEqual(df.loc[bus, (ft2, constants.BkdyFileOutput.ip_method2)], 0.06140, places=3)
+		self.assertAlmostEqual(df.loc[bus, (ft1, constants.BkdyFileOutput.ip_method1)], 2.40260, places=3)
+		self.assertAlmostEqual(df.loc[bus, (ft1, constants.BkdyFileOutput.ip_method2)], 2.40260, places=3)
 
 		# X values for busbar 1301 should be negative
 		self.assertTrue(df.loc[bus, (ft1, constants.BkdyFileOutput.x)] < 0)

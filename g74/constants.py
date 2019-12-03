@@ -47,7 +47,8 @@ class GUI:
 		Constants for the user interface
 	"""
 	gui_name = 'PSC G74 Fault Current Tool'
-	default_fault_times = '0.00, 0.01, 0.06'
+	# 0.00 and 0.01 removed since these fault times will be added anyway
+	default_fault_times = '0.06'
 
 	# Default on whether the SAV case should be reloaded at the end of the fault
 	# study or start from empty
@@ -125,11 +126,17 @@ class PSSE:
 		34: 'PSSE34\PSSBIN'
 	}
 
-	# Relevant filenames for PSSPY and PSSE when needing to search for them
+	# Relevant file names for PSSPY and PSSE when needing to search for them
 	psspy_to_find = "psspy.pyc"
 	pssarrays_to_find = "pssarrays.pyc"
 	psse_to_find = "psse.bat"
 	default_install_directory = r'C:\ProgramData\Microsoft\AppV\Client\Integration'
+
+	def __init__(self):
+		"""
+			Purely to avoid error message
+		"""
+		pass
 
 
 class BkdyFileOutput:
@@ -165,7 +172,7 @@ class BkdyFileOutput:
 	idc = 'DC ({})'.format(current_unit)
 	# Sum of DC components contributing to bus determine peak make
 	idc_method1 = 'DC from sum of DC({})'.format(current_unit)
-	# DC component calcualted from X/R at point of fault
+	# DC component calculated from X/R at point of fault
 	idc_method2 = 'DC X/R method({})'.format(current_unit)
 	idc0 = 'DC_t0 ({})'.format(current_unit)
 	v_prefault = 'V Pre-fault (p.u.)'
@@ -454,7 +461,7 @@ class G74:
 	# #tx_r = 0.07142
 	# #tx_x = 1.0
 
-	# This is the minimum fault time that must be considered for the faults to deteremine Ik'' and Ip
+	# This is the minimum fault time that must be considered for the faults to determine Ik'' and Ip
 	min_fault_time = 0.0
 	# This is the time considered for returning the peak fault current
 	peak_fault_time = 0.01
@@ -486,6 +493,12 @@ class SHEPD:
 
 	reactor_step_change_limit = 0.03
 	cont_step_change_limit = 0.1
+
+	# Unit used for fault times
+	time_units = 'seconds'
+
+	# The following headers will be used for the fault current output spreadsheet
+	output_headers = ('Time after fault:', 'Value:')
 
 	# SHEPD has a custom PSSE path installation which is defined here:
 	psse_path = r'C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Siemens PTI\PSSE 33'

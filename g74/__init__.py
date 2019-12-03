@@ -138,7 +138,7 @@ class Logger:
 		# Set up logger and establish handle for logger
 		self.check_file_paths()
 		self.logger = self.setup_logging()
-		self.initial_log_messages()
+		# #self.initial_log_messages()
 
 	def check_file_paths(self):
 		"""
@@ -203,7 +203,8 @@ class Logger:
 			self.handler_stream_log.setLevel(logging.INFO)
 
 		# Decorate to colour code different warning labels
-		self.handler_stream_log.emit = decorate_emit(self.handler_stream_log.emit)
+		# Added in later if not running from PSSE
+		# #self.handler_stream_log.emit = decorate_emit(self.handler_stream_log.emit)
 
 		# Add handlers to logger
 		logger.addHandler(self.handler_progress_log)
@@ -372,6 +373,21 @@ class Logger:
 			self.logger.info('Log file closing, there were 0 important messages')
 		self.logger.debug('Logging stopped')
 		logging.shutdown()
+
+	def log_colouring(self, run_in_psse=False):
+		"""
+			This function will include the log colouring and then produce initialisation messages.
+			Log colouring is only possible if running from Python and not PSSE
+		:param bool run_in_psse: (optional=False) - Default assumption is that it is running in Python
+		:return None:
+		"""
+		# Add decorator if running from Python
+		# Decorate to colour code different warning labels
+		if not run_in_psse:
+			self.handler_stream_log.emit = decorate_emit(self.handler_stream_log.emit)
+
+		# Display initial log messages of directories where results / error messages are stored
+		self.initial_log_messages()
 
 	def __del__(self):
 		"""
