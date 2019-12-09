@@ -67,7 +67,7 @@ REM Define pip executable file which will be used to install all the wheels
 set pip_execute=%current_dir%\pip-19.3.1-py2.py3-none-any.whl/pip
 
 REM Install each of the defined wheel files in the local directory, forcing a replacement if they already exist
-REM and avoiding the downloading of dependancies.  Therefore all dependancies will need to be installed manually in
+REM and avoiding the downloading of dependencies.  Therefore all dependencies will need to be installed manually in
 REM here.
 REM Output turned on so progress of installation can be monitored
 echo on
