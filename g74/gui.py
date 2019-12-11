@@ -136,7 +136,7 @@ class MainGUI:
 		# Create Help link and reference to the work instructions document
 		self.hyp_help_instructions = Tk.Label (self.master, text = 'Help Instructions', fg = 'Blue', cursor = 'hand2')
 		self.hyp_help_instructions.grid(row = row, column = col, sticky = Tk.W)
-		#self.hyp_help_instructions.bind('<Button - 1>', lambda e: webbrowser.open_new(r'file://C:\Users\Michail\OneDrive - Power Systems Consultants Inc\PSC\New folder\Jobs\JK7938_SHEPD_FaultLevels\g74\JK7938-01-00 PSSE G74 Fault Current Tool - Work Instruction.pdf'))
+		self.hyp_help_instructions.bind('<Button - 1>', lambda e: webbrowser.open_new(self.results_pth + '\\JK7938-01-00 PSSE G74 Fault Current Tool - Work Instruction.pdf'))
 		return None
 
 	def add_cmd_sav_case(self, row, col):
