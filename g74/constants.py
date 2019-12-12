@@ -65,6 +65,10 @@ class GUI:
 	vertical_busbars = 10
 	empty_busbars = 40
 
+	# Indicating the local directory
+	local_directory = os.path.dirname(os.path.realpath(__file__))
+
+
 	def __init__(self):
 		"""
 			Purely to avoid error message
