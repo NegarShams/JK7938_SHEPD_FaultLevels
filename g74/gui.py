@@ -643,3 +643,7 @@ class CreateToolTip(object):
 		self.tw = None
 		if tw:
 			tw.destroy()
+
+
+if __name__ == '__main__':
+	gui = MainGUI()
