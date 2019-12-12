@@ -83,6 +83,7 @@ echo "Any errors mean a package did not install and should be investigated furth
 %pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %current_dir%\openpyxl-2.6.4-py2.py3-none-any.whl
 %pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %current_dir%\jdcal-1.4.1-py2.py3-none-any.whl
 %pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %current_dir%\pandas-0.24.2-cp27-cp27m-win32.whl
+%pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %current_dir%\Pillow-6.2.1-cp27-cp27m-win32.whl
 
 echo "All python packages have been installed."
 exit
