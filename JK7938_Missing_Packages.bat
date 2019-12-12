@@ -67,7 +67,7 @@ REM Define pip executable file which will be used to install all the wheels
 set pip_execute=%current_dir%\pip-19.3.1-py2.py3-none-any.whl/pip
 
 REM Install each of the defined wheel files in the local directory, forcing a replacement if they already exist
-REM and avoiding the downloading of dependancies.  Therefore all dependancies will need to be installed manually in
+REM and avoiding the downloading of dependencies.  Therefore all dependencies will need to be installed manually in
 REM here.
 REM Output turned on so progress of installation can be monitored
 echo on
@@ -83,6 +83,7 @@ echo "Any errors mean a package did not install and should be investigated furth
 %pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %current_dir%\openpyxl-2.6.4-py2.py3-none-any.whl
 %pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %current_dir%\jdcal-1.4.1-py2.py3-none-any.whl
 %pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %current_dir%\pandas-0.24.2-cp27-cp27m-win32.whl
+%pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %current_dir%\Pillow-6.2.1-cp27-cp27m-win32.whl
 
 echo "All python packages have been installed."
 exit
