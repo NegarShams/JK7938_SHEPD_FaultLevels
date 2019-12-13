@@ -16,6 +16,7 @@ import os
 import logging
 import math
 import webbrowser
+from PIL import Image, ImageTk
 
 # Package specific imports
 import g74
@@ -33,9 +34,6 @@ class MainGUI:
 		:param str title: (optional) - Title to be used for main window
 		:param str sav_case: (optional) - Full path to the existing SAV case
 		:param list busbars:  (optional) - List of busbars selected from slider
-		TODO: Add help button which loads work-instruction
-		TODO: Add PSC logo see:  https://stackoverflow.com/questions/23773825/how-can-change-the-logo-of-tkinter-gui-screen)
-		TODO: Add PSC contact details somewhere
 		TODO: (low priority) Potential option for parallel processing where PSSE prepares the model once SAV case selected
 		TODO: 	and user is still selecting busbars but very hard to implement.
 		TODO: (low priority) Additional parameters options to select some constants (kA vs A output)
@@ -74,6 +72,9 @@ class MainGUI:
 		self.bo_fault_1_ph_iec = Tk.BooleanVar()
 		self.bo_open_excel = Tk.BooleanVar()
 		self.hyp_help_instructions = Tk.Label()
+		self.psc_logo_wm = Tk.PhotoImage()
+		self.psc_logo = Tk.Label()
+		self.psc_info = Tk.Label()
 
 		# SAV case for faults to be run on
 		self.sav_case = sav_case
@@ -104,6 +105,15 @@ class MainGUI:
 		# Add help button which loads work instructions
 		self.add_hyp_help_instructions(row=self.row(1), col=self.col())
 
+		# Add PSC logo in Windows Manager
+		self.add_psc_logo_wm()
+
+		# Add PSC information
+		self.add_psc_info(row=self.row(1), col=self.col())
+
+		# Add PSC logo with hyperlink to the website
+		self.add_psc_logo(row=self.row(1), col=self.col())
+
 		self.logger.debug('GUI window created')
 		# Produce GUI window
 		self.master.mainloop()
@@ -125,19 +135,6 @@ class MainGUI:
 		"""
 		self._col += i
 		return self._col
-
-	def add_hyp_help_instructions(self, row, col):
-		"""
-			Function just adds the hyperlink to the GUI which is used for loading the work instructions
-		:param int row: Row number to use
-		:param int col: Column number to use
-		:return: None
-		"""
-		# Create Help link and reference to the work instructions document
-		self.hyp_help_instructions = Tk.Label (self.master, text = 'Help Instructions', fg = 'Blue', cursor = 'hand2')
-		self.hyp_help_instructions.grid(row = row, column = col, sticky = Tk.W)
-		self.hyp_help_instructions.bind('<Button - 1>', lambda e: webbrowser.open_new(self.results_pth + '\\JK7938-01-00 PSSE G74 Fault Current Tool - Work Instruction.pdf'))
-		return None
 
 	def add_cmd_sav_case(self, row, col):
 		"""
@@ -311,6 +308,57 @@ class MainGUI:
 		CreateToolTip(widget=check_button, text=(
 			'If selected the exported excel file will be loaded and visible on completion of the study.'
 		))
+		return None
+
+	def add_hyp_help_instructions(self, row, col):
+		"""
+			Function just adds the hyperlink to the GUI which is used for loading the work instructions
+		:param int row: Row number to use
+		:param int col: Column number to use
+		:return: None
+		"""
+		# Create Help link and reference to the work instructions document
+		self.hyp_help_instructions = Tk.Label (self.master, text = 'Help Instructions', fg = 'Blue', cursor = 'hand2')
+		self.hyp_help_instructions.grid(row = row, column = col, sticky = Tk.W)
+		self.hyp_help_instructions.bind('<Button - 1>', lambda e: webbrowser.open_new(constants.GUI.local_directory + '\\JK7938-01-00 PSSE G74 Fault Current Tool - Work Instruction.pdf'))
+		return None
+
+	def add_psc_logo_wm(self):
+		"""
+			Function just adds the PSC logo to the windows manager in GUI
+		:return: None
+		"""
+		# Create the PSC logo for including in the windows manager
+		self.psc_logo_wm = Tk.PhotoImage(file=constants.GUI.local_directory + '\\PSC_logo.gif')
+		self.master.tk.call('wm', 'iconphoto', self.master._w, self.psc_logo_wm)
+		return None
+
+	def add_psc_info(self, row, col):
+		"""
+			Function just adds the PSC company info and contact details
+		:param row: Row number to use
+		:param col: Column number to use
+		:return: None
+		"""
+		# Create the PSC company info and contact details
+		self.psc_info = Tk.Label(self.master, text = 'Power Systems Consultants UK Ltd\n Phone +44 1926 675 851', justify = 'center', font = 'Helvetica 7 bold italic')
+		self.psc_info.grid(row = row, column = col, columnspan = 2)
+		return None
+
+	def add_psc_logo(self, row, col):
+		"""
+			Function just adds the PSC logo in the GUI and a hyperlink to the website
+		:param row: Row number to use
+		:param col: Column Number to use
+		:return: None
+		"""
+		# Create the PSC logo and a hyperlink to the website
+		img = Image.open(constants.GUI.local_directory + '\\PSC_logo.gif').resize((35,35), Image.ANTIALIAS)
+		img = ImageTk.PhotoImage(img)
+		self.psc_logo = Tk.Label(self.master, image = img, text = 'www.pscconsulting.com', cursor = 'hand2', justify = 'center', compound = 'top', fg = 'blue', font = 'Helvetica 7 italic')
+		self.psc_logo.photo = img
+		self.psc_logo.grid(row = row, column = col, columnspan=2)
+		self.psc_logo.bind('<Button - 1>', lambda e: webbrowser.open_new('https://www.pscconsulting.com/'))
 		return None
 
 	def import_busbars_list(self):
