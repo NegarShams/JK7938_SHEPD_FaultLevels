@@ -13,22 +13,124 @@
 # Generic Imports
 import os
 import sys
-import logging
-import logging.handlers
 import time
 import inspect
 import subprocess
+import shutil
+time.sleep(1)
+
+# Constants have to be defined here since may not be able to actually import constants when running from PSSE rather
+# than Python if PSSE python dll is wrong.
+# #c_python27_dll = 'python27.dll'
+# This is the folder which contains the PSSE python27.dll file
+# #c_psse_psspy27_folder = 'PSSPY27'
+# This is the folder which contains the Python python27.dll file
+# #c_python_psspy27_folder = 'Windows'
+# This is the Python version that the G74 tool has been written for, errors due to imports are likely to be due to a
+# Python version issue.
+designed_python_version = [2, 7, 9]
+
+
+# #def find_python27_dll(parent_folder, start_directory='C:\\'):
+# #	"""
+# #		Function to find the PSSE directory which hosts the Python27.dll file so that it can be renamed to avoid
+# #		it being used any more.
+# #	:param str parent_folder: A folder that must be in the search path for it to be considered valid
+# #	:param str start_directory: (optional) - Assumes C drive
+# #	:return str path to python27_dll:
+# #	"""
+# #	for root, dirs, files in os.walk(start_directory):  # Walks through all subdirectories searching for file
+# #		# Removes any directories tat start with
+# #		[dirs.remove(d) for d in list(dirs) if d.startswith('$') or d.startswith('.')]
+# #		# Check if contains dll file and is located in the PSSE folder rather than python folder
+# #		if c_python27_dll in files and parent_folder in root:
+# #			return root, c_python27_dll
+# #
+# #	return None, None
 
 # Location where local packages will be installed
 local_packages = os.path.join(os.path.dirname(__file__), '..', 'local_packages')
+print(local_packages)
+time.sleep(1)
 # Won't be searched unless it exists when added to system path
 if not os.path.exists(local_packages):
 	os.makedirs(local_packages)
 # Insert local_packages to start of path for fault studies
 sys.path.insert(0, local_packages)
 
+# Try and import logging and if issue is likely to be due to Python version issues.
+# For some reason when PSSE is started from windows explorer rather than PSSE directly the wrong version of
+# Python27.dll is loaded from the PSSE folder rather than the windows folder.  This then creates issues importing
+# logging.handlers
+# To resolve this Python27.dll in the PSSE folder needs to be removed / renamed to force PSSE to look for the
+# main Windows\System version of Python27.dll
+try:
+	import logging
+	import logging.handlers
+except ImportError:
+	print('\n----------------------------\n\tERROR - Unable to import standard PSSE modules')
+	# Expecting to be running PSSE version 2.7.9, when running in 2.7 errors are created
+	if sys.version_info.micro <= designed_python_version[2]:
+		print(
+			(
+				'\n\tThis is due to a Python version issue.  You are running version {}.{}.{} when it is expected that '
+				'version {}.{}.{} should be running.  Unfortunately a solution to this has not yet been found and '
+				'is still being worked on.'
+				'\n\tIt is likely to be the way that you have loaded the PSSE instance and '
+				'you are recommended to close PSSE and restart PSSE directly from the Start Menu.'
+				'\n\tThis should resolve the issue.'
+				'\n----------------------------\n'
+			).format(
+				sys.version_info.major, sys.version_info.minor, sys.version_info.micro,
+				designed_python_version[0], designed_python_version[1], designed_python_version[2]
+			)
+		)
+	else:
+		print(
+			'Reason for issues importing standard Python modules is unknown, you are suggested to contact:\n'
+			'\t- David Mills\n'
+			'\t- david.mills@PSCconsulting.com\n'
+			'\t- +44 7899 984158'
+			'\n-----------------------\n'
+		)
+
+	# Find original DLL file
+	# #path_psse, psse_python27_file = find_python27_dll(parent_folder=c_psse_psspy27_folder)
+	# #path_windows, python_python27_file = find_python27_dll(parent_folder=c_python_psspy27_folder)
+	# #if path_psse is not None and path_windows is not None:
+	# #	# Display error message to let user know what is happening
+	# #	print(
+	# #		(
+	# #			'There is an error with your PSSE installation and its interaction with Python 2.7.9, for some reason '
+	# #			'the installation is using Python version {}.{}.{}'
+	# #		).format(sys.version_info.major, sys.version_info.minor, sys.version_info.micro)
+	# #	)
+	# #	print(
+	# #		(
+	# #			'This is thought to be due to the {} file  provided as part of the PSSE installation and located '
+	# #			'in folder {}.  To resolve this issue the file needs to be removed or renamed and then PSSE '
+	# #			'restarted.'
+	# #		).format(psse_python27_file, path_psse)
+	# #	)
+	# #	print(
+	# #		(
+	# #			'This can be resolved by replacing the file with the file named {} located in folder {}.'
+	# #		).format(python_python27_file, path_windows)
+	# #	)
+	# #	raise ImportError('You will need to replace the file as detailed above and restart PSSE')
+	# #else:
+	# #	print(
+	# #		(
+	# #			'Have not been able to find the file {} and therefore not sure what the issue is, suggest you contact '
+	# #			'David Mills (david.mills@PSCconsulting.com / +44 7899 984158) with the full list of error messages '
+	# #			'above and details of what you attempted to do.'
+	# #		).format(c_python27_dll)
+	# #	)
+	raise ImportError('There is an issue with Python / PSSE integration as detailed above!')
+
 # Package imports
 try:
+	# Try and import G74 packages
 	import g74.constants as constants
 	import g74.psse as psse
 	import g74.file_handling as file_handling
@@ -37,9 +139,17 @@ except ImportError:
 	t0 = time.time()
 	# TODO: Add in a check to confirm that the files actually exist
 	print(
-		'Unable to import some packages because they may not have been installed, script will now install'
+		'Unable to import some packages because they may not have been installed, script will now install '
 		'missing packages but this may take some time, please be patient!!'
 	)
+
+	# Remove any already installed local_packages as they will all be re-installed.
+	time.sleep(1)
+	shutil.rmtree(local_packages)
+	# Wait 500ms and then create a new folder
+	time.sleep(1)
+	os.makedirs(local_packages)
+
 	batch_path = os.path.join(os.path.dirname(__file__), '..', 'JK7938_Missing_Packages.bat')
 	print('The following batch file will be run to install the packages: {}'.format(batch_path))
 	subprocess.call([batch_path])

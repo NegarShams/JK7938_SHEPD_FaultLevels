@@ -1,33 +1,33 @@
 REM
-REM ###################################################################################################################
-REM ###										PSSE G74 Fault Studies													###
+REM #######################################################################################################################
+REM ###										PSSE G74 Fault Studies			###
 REM ###		Script sets up Python on SHEPD machines for use with PSSE and G74 script produced by PSC.               ###
-REM ###		This is necessary to make available the following packages to the G74 script:							###
-REM ###			- setuptools																						###
-REM ###			- six																								###
-REM ###			- numpy																								###
-REM ###			- xlrd																								###
-REM ###			- xlwt																								###
-REM ###			- dateutil																							###
-REM ###			- pytz  																							###
-REM ###			- et_emlfile																						###
-REM ###			- openpyxl  																						###
-REM ###			- jdcal       																						###
-REM ###			- pandas       																						###
-REM ###																												###
+REM ###		This is necessary to make available the following packages to the G74 script:				###
+REM ###			- setuptools											###
+REM ###			- six												###
+REM ###			- numpy												###
+REM ###			- xlrd												###
+REM ###			- xlwt												###
+REM ###			- dateutil											###
+REM ###			- pytz  											###
+REM ###			- et_emlfile											###
+REM ###			- openpyxl  											###
+REM ###			- jdcal       											###
+REM ###			- pandas       											###
+REM ###															###
 REM ###		These packages will be installed in the same directory as this batch file is run and so should not      ###
-REM ###     administrative privaledges if the batch file is located in the users directory. The package 			###
+REM ###     administrative privaledges if the batch file is located in the users directory. The package 		###
 REM ###     installation is completed using python 2.7 and pip, since sometimes the SHEPD installation does not 	###
 REM ###     have pip installed it is provided as part of this package.                                           	###
-REM ###																												###
+REM ###															###
 REM ###		Also, since python is not defined as an environment variable on the SHEPD installation this batch file  ###
 REM ###		will search for python 2.7 installation on the C drive.  If a different drive is necessary then the     ###
 REM ###		user will need to change the search path                                                                ###
-REM ###																												###
-REM ###		Code developed by David Mills (david.mills@PSCconsulting.com, +44 7899 984158) as part of PSC 		 	###
-REM ###		project JK7938 - SHEPD - studies and automation															###
-REM ###																												###
-REM ###################################################################################################################
+REM ###															###
+REM ###		Code developed by David Mills (david.mills@PSCconsulting.com, +44 7899 984158) as part of PSC 		###
+REM ###		project JK7938 - SHEPD - studies and automation								###
+REM ###															###
+REM #######################################################################################################################
 REM """
 
 @echo off

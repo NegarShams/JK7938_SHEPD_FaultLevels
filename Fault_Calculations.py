@@ -216,3 +216,5 @@ if __name__ == '__main__':
 			os.startfile(target_file)
 
 		logger.info('Complete with total study time of {:.2f} seconds'.format(time.time()-t0))
+		# Restore PSSE output to normal
+		psse.change_output(destination=constants.PSSE.output_default)

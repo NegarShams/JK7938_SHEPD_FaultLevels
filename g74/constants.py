@@ -68,7 +68,6 @@ class GUI:
 	# Indicating the local directory
 	local_directory = os.path.dirname(os.path.realpath(__file__))
 
-
 	def __init__(self):
 		"""
 			Purely to avoid error message
@@ -82,10 +81,6 @@ class PSSE:
 	"""
 	# Base MVA value assumed
 	base_mva = 100.0
-
-	# Setting on whether PSSE should output results based on whether operating in DEBUG_MODE or not
-	output = {True: 1, False: 6}
-	file_output = 2
 
 	# Maximum number of iterations for a Newton Raphson load flow (default = 20)
 	max_iterations = 100
@@ -135,6 +130,14 @@ class PSSE:
 	pssarrays_to_find = "pssarrays.pyc"
 	psse_to_find = "psse.bat"
 	default_install_directory = r'C:\ProgramData\Microsoft\AppV\Client\Integration'
+
+	# Default destination for PSSE output
+	output_default = 1
+	output_file = 2
+	output_none = 6
+
+	# Setting on whether PSSE should output results based on whether operating in DEBUG_MODE or not
+	output = {True: output_default, False: output_none}
 
 	def __init__(self):
 		"""

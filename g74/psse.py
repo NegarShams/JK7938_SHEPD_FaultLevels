@@ -685,10 +685,10 @@ class PsseControl:
 		# Determine whether running from PSSE or not
 		self.running_from_psse()
 
-	def change_output(self, destination):
+	def change_output(self, destination=constants.PSSE.output_default):
 		"""
 			Function disables the reporting output from PSSE
-		:param int destination:  Target destination, default is to disable which sets it to 6
+		:param int destination:  (optional=1) Target destination, default is to restore it to 1
 		:return None:
 		"""
 		self.logger.debug('PSSE general output changed to destination = {} (1=default, 6=none)'.format(destination))
@@ -1376,7 +1376,7 @@ class BkdyFaultStudy:
 		func_bkdy = psspy.bkdy
 
 		# Change destination to file type object
-		self.change_report_output(destination=constants.PSSE.file_output, output_file=output_file)
+		self.change_report_output(destination=constants.PSSE.output_file, output_file=output_file)
 
 		# Carry out fault current calculation
 		ierr = func_bkdy(
