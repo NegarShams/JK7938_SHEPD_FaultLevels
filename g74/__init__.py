@@ -18,6 +18,7 @@ import logging.handlers
 import time
 import inspect
 import subprocess
+import shutil
 
 # Location where local packages will be installed
 local_packages = os.path.join(os.path.dirname(__file__), '..', 'local_packages')
@@ -40,6 +41,13 @@ except ImportError:
 		'Unable to import some packages because they may not have been installed, script will now install'
 		'missing packages but this may take some time, please be patient!!'
 	)
+
+	# Remove any already installed local_packages as they will all be re-installed.
+	shutil.rmtree(local_packages)
+	# Wait 500ms and then create a new folder
+	time.sleep(0.5)
+	os.makedirs(local_packages)
+
 	batch_path = os.path.join(os.path.dirname(__file__), '..', 'JK7938_Missing_Packages.bat')
 	print('The following batch file will be run to install the packages: {}'.format(batch_path))
 	subprocess.call([batch_path])
