@@ -17,7 +17,6 @@ import time
 import inspect
 import subprocess
 import shutil
-time.sleep(1)
 
 # Constants have to be defined here since may not be able to actually import constants when running from PSSE rather
 # than Python if PSSE python dll is wrong.
@@ -50,8 +49,6 @@ designed_python_version = [2, 7, 9]
 
 # Location where local packages will be installed
 local_packages = os.path.join(os.path.dirname(__file__), '..', 'local_packages')
-print(local_packages)
-time.sleep(1)
 # Won't be searched unless it exists when added to system path
 if not os.path.exists(local_packages):
 	os.makedirs(local_packages)
@@ -147,7 +144,7 @@ except ImportError:
 	time.sleep(1)
 	shutil.rmtree(local_packages)
 	# Wait 500ms and then create a new folder
-	time.sleep(1)
+	time.sleep(0.5)
 	os.makedirs(local_packages)
 
 	batch_path = os.path.join(os.path.dirname(__file__), '..', 'JK7938_Missing_Packages.bat')
