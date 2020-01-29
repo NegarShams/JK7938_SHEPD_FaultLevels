@@ -141,7 +141,6 @@ except ImportError:
 	)
 
 	# Remove any already installed local_packages as they will all be re-installed.
-	time.sleep(1)
 	shutil.rmtree(local_packages)
 	# Wait 500ms and then create a new folder
 	time.sleep(0.5)
