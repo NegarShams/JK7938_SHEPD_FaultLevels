@@ -10,6 +10,7 @@
 """
 # General imports
 import Tkinter as Tk
+import ttk
 import tkFileDialog
 import tkMessageBox
 import os
@@ -105,14 +106,20 @@ class MainGUI:
 		# Add help button which loads work instructions
 		self.add_hyp_help_instructions(row=self.row(1), col=self.col())
 
+		# Add seperator
+		self.add_sep(row=self.row(1), col_span=2)
+
 		# Add PSC logo in Windows Manager
 		self.add_psc_logo_wm()
 
 		# Add PSC information
-		self.add_psc_info(row=self.row(1), col=self.col())
+		# #self.add_psc_info(row=self.row(1), col=self.col())
 
 		# Add PSC logo with hyperlink to the website
 		self.add_psc_logo(row=self.row(1), col=self.col())
+
+		# Add PSC UK and phone number
+		self.add_psc_phone(row=self.row(1), col=self.col())
 
 		self.logger.debug('GUI window created')
 		# Produce GUI window
@@ -329,7 +336,7 @@ class MainGUI:
 		:return: None
 		"""
 		# Create the PSC logo for including in the windows manager
-		self.psc_logo_wm = Tk.PhotoImage(file=constants.GUI.local_directory + '\\PSC_logo.gif')
+		self.psc_logo_wm = Tk.PhotoImage(file=constants.GUI.img_pth_window)
 		self.master.tk.call('wm', 'iconphoto', self.master._w, self.psc_logo_wm)
 		return None
 
@@ -341,8 +348,11 @@ class MainGUI:
 		:return: None
 		"""
 		# Create the PSC company info and contact details
-		self.psc_info = Tk.Label(self.master, text = 'Power Systems Consultants UK Ltd\n Phone +44 1926 675 851', justify = 'center', font = 'Helvetica 7 bold italic')
-		self.psc_info.grid(row = row, column = col, columnspan = 2)
+		self.psc_info = Tk.Label(
+			self.master, text=constants.GUI.psc_uk, justify='center', font=constants.GUI.psc_font,
+			foreground=constants.GUI.psc_color_web_blue
+		)
+		self.psc_info.grid(row=row, column=col, columnspan=2)
 		return None
 
 	def add_psc_logo(self, row, col):
@@ -353,12 +363,43 @@ class MainGUI:
 		:return: None
 		"""
 		# Create the PSC logo and a hyperlink to the website
-		img = Image.open(constants.GUI.local_directory + '\\PSC_logo.gif').resize((35,35), Image.ANTIALIAS)
+		# #img = Image.open(constants.GUI.local_directory + '\\PSC_logo.gif').resize((35,35), Image.ANTIALIAS)
+		# #img = Image.open(constants.GUI.img_pth).resize((35, 35), Image.ANTIALIAS)
+		img = Image.open(constants.GUI.img_pth_main)
+		img.thumbnail(constants.GUI.img_size)
 		img = ImageTk.PhotoImage(img)
-		self.psc_logo = Tk.Label(self.master, image = img, text = 'www.pscconsulting.com', cursor = 'hand2', justify = 'center', compound = 'top', fg = 'blue', font = 'Helvetica 7 italic')
+		# #self.psc_logo = Tk.Label(self.master, image=img, text = 'www.pscconsulting.com', cursor = 'hand2', justify = 'center', compound = 'top', fg = 'blue', font = 'Helvetica 7 italic')
+		self.psc_logo = Tk.Label(self.master, image=img, cursor='hand2', justify='center', compound='top')
 		self.psc_logo.photo = img
-		self.psc_logo.grid(row = row, column = col, columnspan=2)
+		self.psc_logo.grid(row=row, column=col, columnspan=2)
 		self.psc_logo.bind('<Button - 1>', lambda e: webbrowser.open_new('https://www.pscconsulting.com/'))
+		return None
+
+	def add_psc_phone(self, row, col):
+		"""
+			Function just adds the PSC contact details
+		:param row: Row number to use
+		:param col: Column number to use
+		:return: None
+		"""
+		# Create the PSC company info and contact details
+		self.psc_info = Tk.Label(
+			self.master, text=constants.GUI.psc_phone, justify='center', font=constants.GUI.psc_font,
+			foreground=constants.GUI.psc_color_grey
+		)
+		self.psc_info.grid(row=row, column=col, columnspan=2)
+		return None
+
+	def add_sep(self, row, col_span):
+		"""
+			Function just adds a horizontal separator
+		:param int row: Row number to use
+		:param int col_span: Column span number to use
+		:return None:
+		"""
+		# Add separator
+		sep = ttk.Separator(self.master, orient="horizontal")
+		sep.grid(row=row, sticky=Tk.W + Tk.E, columnspan=col_span, pady=5)
 		return None
 
 	def import_busbars_list(self):

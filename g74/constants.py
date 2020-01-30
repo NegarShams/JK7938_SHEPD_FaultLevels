@@ -67,6 +67,16 @@ class GUI:
 
 	# Indicating the local directory
 	local_directory = os.path.dirname(os.path.realpath(__file__))
+	img_pth_main = os.path.join(local_directory, 'PSC Logo RGB Vertical.png')
+	img_pth_window = os.path.join(local_directory, 'PSC Logo no tag-1200.gif')
+	img_size = (128, 128)
+
+	# Test to include on the GUI
+	psc_uk = 'PSC UK'
+	psc_phone = '\nPSC UK:  +44 1926 675 851'
+	psc_font = 'Calibri 10 bold'
+	psc_color_web_blue = '#%02x%02x%02x' % (43, 112, 170)
+	psc_color_grey = '#%02x%02x%02x' % (89, 89, 89)
 
 	def __init__(self):
 		"""
