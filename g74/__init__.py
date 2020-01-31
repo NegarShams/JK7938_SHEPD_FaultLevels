@@ -141,7 +141,8 @@ except ImportError:
 	)
 
 	# Remove any already installed local_packages as they will all be re-installed.
-	shutil.rmtree(local_packages)
+	if os.path.isdir(local_packages):
+		shutil.rmtree(local_packages)
 	# Wait 500ms and then create a new folder
 	time.sleep(0.5)
 	os.makedirs(local_packages)
