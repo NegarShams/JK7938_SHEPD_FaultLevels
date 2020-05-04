@@ -12,12 +12,8 @@
 import unittest
 import os
 import sys
-import pandas as pd
-import numpy as np
-import math
 import g74
 import g74.file_handling as test_module
-import g74.constants as constants
 
 TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
 TEST_LOGS = os.path.join(TESTS_DIR, 'logs')
@@ -33,6 +29,7 @@ class TestBusbarImport(unittest.TestCase):
 	"""
 		Tests that a spreadsheet of busbar numbers can successfully be imported
 	"""
+	logger = None
 
 	@classmethod
 	def setUpClass(cls):

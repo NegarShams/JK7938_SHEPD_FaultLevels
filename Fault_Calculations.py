@@ -18,7 +18,7 @@ import pandas as pd
 
 # Meta Data
 __author__ = 'David Mills'
-__version__ = '0.0.1'
+__version__ = '1.0.1'
 __email__ = 'david.mills@PSCconsulting.com'
 __phone__ = '+44 7899 984158'
 __status__ = 'In Development - Beta'
@@ -26,7 +26,8 @@ __status__ = 'In Development - Beta'
 
 def fault_study(
 		psse_handler,
-		local_uid, sav_case, local_temp_folder, excel_file, fault_times, buses, local_logger, reload_sav=True
+		local_uid, sav_case, local_temp_folder, excel_file, fault_times, buses, local_logger, reload_sav=True,
+		fault_types=((1, ), (0, 0))
 ):
 	"""
 		Run G74 fault study calculation using PSSE BKDY or IEC methods and obtain the
@@ -40,6 +41,9 @@ def fault_study(
 	:param list buses:  List of busbars to fault
 	:param g74.Logger local_logger:  Path to logger
 	:param bool reload_sav:  (optional=True) Whether original SAV case should be reloaded at the end
+	:param tuple fault_types: (optional=((1,),(1,1))) - Details which faults should be carried out based on either:
+								BKDY method - 3 Phase fault
+								IEC method - 3 Phase or LG fault
 	:return None:
 	"""
 	# Produce temporary files
@@ -81,14 +85,18 @@ def fault_study(
 	if temp_sav_case:
 		psse_handler.save_data_case(pth_sav=temp_sav_case)
 
-	# TODO:  At this point want to add in also IEC fault study for 3Ph and LG
+	# TODO:  At this point want to add in also IEC fault study for LG
 	# Carry out fault current study for each time step
-	df = bkdy.calculate_fault_currents(
-		fault_times=fault_times, g74_infeed=g74_data,
-		# #buses=buses_to_fault, delete=False
-		buses=buses,
-		delete=True
-	)
+	if sum(fault_types[0]):
+		df = bkdy.calculate_fault_currents(
+			fault_times=fault_times, g74_infeed=g74_data,
+			# #buses=buses_to_fault, delete=False
+			buses=buses,
+			delete=True
+		)
+
+	if sum(fault_types[1]):
+		raise SyntaxError('Code to correctly implement IEC faults has not been developed yet')
 
 	# Save temporary SAV case (if necessary)
 	if temp_sav_case:
@@ -171,8 +179,9 @@ if __name__ == '__main__':
 	# Check if PSSE is running and if so retrieve list of selected busbars, else return empty list
 	psse = g74.psse.PsseControl()
 
-	# Produce initial log messages and decorate appropriately
-	logger.log_colouring(run_in_psse=psse.run_in_psse)
+	# # Produce initial log messages and decorate appropriately
+	# logger.log_colouring(run_in_psse=psse.run_in_psse)
+	logger.initial_log_messages()
 
 	# Run main study
 	logger.info('Study started')
@@ -203,10 +212,15 @@ if __name__ == '__main__':
 		buses_to_fault = gui.selected_busbars
 		open_excel = gui.bo_open_excel.get()
 
+		# Get details about types of faults to be studied
+		bkdy_faults = gui.bkdy_faults
+		iec_faults = gui.iec_faults
+
 		fault_study(
 			psse_handler=psse,
 			local_uid=uid, sav_case=pth_sav_case, local_temp_folder=temp_folder, excel_file=target_file,
 			fault_times=faults, buses=buses_to_fault, reload_sav=reload_sav_case, local_logger=logger,
+			fault_types=(bkdy_faults, iec_faults)
 		)
 
 		# Open the exported excel if setting is as such

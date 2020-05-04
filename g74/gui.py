@@ -68,6 +68,7 @@ class MainGUI:
 		self.entry_fault_times = Tk.Entry()
 		self.cmd_calculate_faults = Tk.Button()
 		self.bo_reload_sav = Tk.BooleanVar()
+		# Initialise variables and populate with initial fault type status
 		self.bo_fault_3_ph_bkdy = Tk.BooleanVar()
 		self.bo_fault_3_ph_iec = Tk.BooleanVar()
 		self.bo_fault_1_ph_iec = Tk.BooleanVar()
@@ -76,6 +77,10 @@ class MainGUI:
 		self.psc_logo_wm = Tk.PhotoImage()
 		self.psc_logo = Tk.Label()
 		self.psc_info = Tk.Label()
+
+		# Grouping of variables for fault types
+		self.bo_bkdy_fault_types = (self.bo_fault_3_ph_bkdy, )
+		self.bo_iec_fault_types = (self.bo_fault_3_ph_iec, self.bo_fault_1_ph_iec)
 
 		# SAV case for faults to be run on
 		self.sav_case = sav_case
@@ -112,14 +117,14 @@ class MainGUI:
 		# Add PSC logo in Windows Manager
 		self.add_psc_logo_wm()
 
-		# Add PSC information
-		# #self.add_psc_info(row=self.row(1), col=self.col())
-
 		# Add PSC logo with hyperlink to the website
 		self.add_psc_logo(row=self.row(1), col=self.col())
 
 		# Add PSC UK and phone number
 		self.add_psc_phone(row=self.row(1), col=self.col())
+
+		# Initial status of faults for selection boxes
+		self.bkdy_faults, self.iec_faults = self.get_fault_types()
 
 		self.logger.debug('GUI window created')
 		# Produce GUI window
@@ -276,7 +281,7 @@ class MainGUI:
 			'3 Phase fault (IEC method)',
 			'LG Phase fault (IEC method)'
 		)
-		boolean_vars = (self.bo_fault_3_ph_bkdy, self.bo_fault_3_ph_iec, self.bo_fault_1_ph_iec)
+		boolean_vars = self.bo_bkdy_fault_types + self.bo_iec_fault_types
 
 		# TODO: Implement additional fault current calculations
 		# The following values are used to enable and disable the buttons and will be removed once
@@ -292,10 +297,11 @@ class MainGUI:
 				self.master, text=lbl, variable=boolean_vars[i]
 			)
 			check_button.grid(row=self.row(1), column=col, sticky=Tk.W)
+
 			# TODO: Temporary to disable non-necessary faults
 			# Disable faults that are not important
 			if not enabled[i]:
-				check_button.config(state='disabled')
+				check_button.config(state=Tk.DISABLED)
 		return i
 
 	def add_open_excel(self, row, col):
@@ -368,7 +374,7 @@ class MainGUI:
 		img = Image.open(constants.GUI.img_pth_main)
 		img.thumbnail(constants.GUI.img_size)
 		img = ImageTk.PhotoImage(img)
-		# #self.psc_logo = Tk.Label(self.master, image=img, text = 'www.pscconsulting.com', cursor = 'hand2', justify = 'center', compound = 'top', fg = 'blue', font = 'Helvetica 7 italic')
+
 		self.psc_logo = Tk.Label(self.master, image=img, cursor='hand2', justify='center', compound='top')
 		self.psc_logo.photo = img
 		self.psc_logo.grid(row=row, column=col, columnspan=2)
@@ -458,6 +464,19 @@ class MainGUI:
 		self.cmd_select_sav_case.config(text=lbl_sav_button)
 		return None
 
+	def get_fault_types(self):
+		"""
+			Function to obtain a list of the bkdy and iec fault studies that should be carried out
+		:return (tuple, tuple)
+		"""
+		# BKDY Fault Types (True / False on whether selected)
+		bkdy_faults = (x.get() for x in self.bo_bkdy_fault_types)
+
+		# IEC Fault Types (True / False on whether selected)
+		iec_faults = (x.get() for x in self.bo_iec_fault_types)
+
+		return bkdy_faults, iec_faults
+
 	def process(self):
 		"""
 			Function sorts the files list to remove any duplicates and then closes GUI window
@@ -504,6 +523,9 @@ class MainGUI:
 					self.logger.warning(
 						'Unable to convert the fault time <{}> to a number and so has been skipped'.format(val)
 					)
+
+			# Update with latest fault types
+			self.bkdy_faults, self.iec_faults = self.get_fault_types()
 
 			self.logger.info(
 				(

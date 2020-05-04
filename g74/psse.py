@@ -1774,6 +1774,7 @@ class BkdyFile:
 				raise SyntaxError('BKDY output file already deleted or empty')
 			else:
 				return self.df
+		# Create reg
 		regex_bus = re.compile('[0-9]+')
 		bus = int()
 		start_reached = False

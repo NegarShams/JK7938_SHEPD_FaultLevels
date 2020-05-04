@@ -78,6 +78,16 @@ class GUI:
 	psc_color_web_blue = '#%02x%02x%02x' % (43, 112, 170)
 	psc_color_grey = '#%02x%02x%02x' % (89, 89, 89)
 
+	# Definition of the fault types that will be studied
+	bkdy_3ph = 'BKDY_3PH'
+	iec_3ph = 'IEC_3PH'
+	iec_lg = 'IEC_LG'
+	fault_types = {
+		bkdy_3ph: 0,
+		iec_3ph: 0,
+		iec_lg: 0
+	}
+
 	def __init__(self):
 		"""
 			Purely to avoid error message

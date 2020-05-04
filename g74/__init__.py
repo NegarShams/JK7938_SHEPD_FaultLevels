@@ -169,41 +169,41 @@ __phone__ = '+44 7899 984158'
 __status__ = 'Development'
 
 
-def decorate_emit(fn):
-	"""
-		Function will decorate the log message to insert a colour control for the console output
-	:param fn:
-	:return:
-	"""
-
-	# add methods we need to the class
-	def new(*args):
-		level_number = args[0].levelno
-		if level_number >= logging.CRITICAL:
-			# Set colour to red
-			color = '\x1b[31;1m'
-		elif level_number >= logging.ERROR:
-			# Set colour to Red
-			color = '\x1b[31;1m'
-		elif level_number >= logging.WARNING:
-			# Set colour to dark yellow
-			color = '\x1b[33;1m'
-		elif level_number >= logging.INFO:
-			# Set colour to yellow
-			color = '\x1b[32;1m'
-		elif level_number >= logging.DEBUG:
-			# Set colour to purple
-			color = '\x1b[35;1m'
-		else:
-			color = '\x1b[0m'
-
-		# Change the colour of the log messages
-		args[0].msg = "{0}{1}\x1b[0m ".format(color, args[0].msg)
-		args[0].levelname = "{0}{1}\x1b[0m ".format(color, args[0].levelname)
-
-		return fn(*args)
-
-	return new
+# def decorate_emit(fn):
+# 	"""
+# 		Function will decorate the log message to insert a colour control for the console output
+# 	:param fn:
+# 	:return:
+# 	"""
+#
+# 	# add methods we need to the class
+# 	def new(*args):
+# 		level_number = args[0].levelno
+# 		if level_number >= logging.CRITICAL:
+# 			# Set colour to red
+# 			color = '\x1b[31;1m'
+# 		elif level_number >= logging.ERROR:
+# 			# Set colour to Red
+# 			color = '\x1b[31;1m'
+# 		elif level_number >= logging.WARNING:
+# 			# Set colour to dark yellow
+# 			color = '\x1b[33;1m'
+# 		elif level_number >= logging.INFO:
+# 			# Set colour to yellow
+# 			color = '\x1b[32;1m'
+# 		elif level_number >= logging.DEBUG:
+# 			# Set colour to purple
+# 			color = '\x1b[35;1m'
+# 		else:
+# 			color = '\x1b[0m'
+#
+# 		# Change the colour of the log messages
+# 		args[0].msg = "{0}{1}\x1b[0m ".format(color, args[0].msg)
+# 		args[0].levelname = "{0}{1}\x1b[0m ".format(color, args[0].levelname)
+#
+# 		return fn(*args)
+#
+# 	return new
 
 
 class Logger:
@@ -490,8 +490,9 @@ class Logger:
 		"""
 		# Add decorator if running from Python
 		# Decorate to colour code different warning labels
-		if not run_in_psse:
-			self.handler_stream_log.emit = decorate_emit(self.handler_stream_log.emit)
+		if not self.run_in_psse:
+			# self.handler_stream_log.emit = decorate_emit(self.handler_stream_log.emit)
+			self.handler_stream_log.emit = self.handler_stream_log.emit
 
 		# Display initial log messages of directories where results / error messages are stored
 		self.initial_log_messages()
