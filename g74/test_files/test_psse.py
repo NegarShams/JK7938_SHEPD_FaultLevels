@@ -52,17 +52,6 @@ class TestPsseInitialise(unittest.TestCase):
 		# Initialise logger
 		cls.logger = g74.Logger(pth_logs=TEST_LOGS, uid='TestPSSEInitialise', debug=g74.constants.DEBUG_MODE)
 
-	# def test_psse32_psspy_import_fail(self):
-	# 	"""
-	# 		Test that PSSE version 32 cannot be initialised because it is not installed
-	# 	:return:
-	# 	"""
-	# 	sys.path = original_sys
-	# 	os.environ['PATH'] = original_environ
-	# 	# #self.psse = test_module.InitialisePsspy(psse_version=32)
-	# 	self.assertRaises(ImportError, test_module.InitialisePsspy, 32)
-	# 	# #self.assertIsNone(self.psse.psspy)
-
 	def test_psse33_psspy_import_success(self):
 		"""
 			Test that PSSE version 33 can be initialised
@@ -360,6 +349,222 @@ class TestBkdyComponents(unittest.TestCase):
 		for path in (output_break, output_peak, idev_file):
 			self.assertTrue(os.path.exists(path))
 			os.remove(path)
+
+	@classmethod
+	def tearDownClass(cls):
+		# Delete log files created by logger
+		if DELETE_LOG_FILES:
+			paths = [
+				cls.logger.pth_debug_log,
+				cls.logger.pth_progress_log,
+				cls.logger.pth_error_log
+			]
+			del cls.logger
+			for pth in paths:
+				if os.path.exists(pth):
+					os.remove(pth)
+
+
+class TestIECComponents(unittest.TestCase):
+	"""
+		Tests the calculation of fault currents using the IEC method
+	"""
+	logger = None
+
+	@classmethod
+	def setUpClass(cls):
+		"""
+			Load the SAV case into PSSE for further testing
+		"""
+		# Initialise logger
+		cls.logger = g74.Logger(pth_logs=TEST_LOGS, uid='TestIECcomponents', debug=g74.constants.DEBUG_MODE)
+		cls.psse = test_module.PsseControl()
+		cls.psse.load_data_case(pth_sav=SAV_CASE_COMPLETE)
+
+	def test_calculate_iec_3ph(self):
+		"""
+			Function tests complete calculation of IEC faults using 3 phase fault current calculation
+		:return:
+		"""
+		# Reload SAV case
+		self.psse.load_data_case()
+
+		# Bus numbers to test - These are busbars with motors directly contributing to a fault at
+		# this busbar
+		buses_to_test = [11, 33]
+		fault_times_to_test = (0.05, 0.06)
+
+		# Model setup
+		# Add machines to model
+		g74_data = test_module.G74FaultInfeed()
+		g74_data.identify_machine_parameters()
+		g74_data.calculate_machine_mva_values()
+
+		# IEC method for fault current calculations
+		iec = test_module.IecFaults(psse=self.psse, buses=buses_to_test)
+
+		# Iterative loop that tests a range of fault times
+		dfs = list()
+
+		# Run calculation for all fault times
+		for fault_time in fault_times_to_test:
+
+			# Calculate new machine impedance values
+			g74_data.calculate_machine_impedance(fault_time=fault_time)
+
+			# Add machines to model
+			g74_data.add_machines()
+
+			if fault_time == constants.PSSE.min_fault_time:
+				self.psse.save_data_case(pth_sav=SAV_CASE_COMPLETE2)
+
+			# Run fault study for both busbars at this time step
+			df = iec.fault_study(fault_time=fault_time, lll=True)
+			dfs.append(df)
+
+	def test_calculate_iec_lg(self):
+		"""
+			Function tests complete calculation of IEC faults using 3 phase fault current calculation
+		:return:
+		"""
+		# Reload SAV case
+		self.psse.load_data_case()
+
+		# Bus numbers to test - These are busbars with motors directly contributing to a fault at
+		# this busbar
+		buses_to_test = [11, 33]
+		fault_times_to_test = (0.05, 0.06)
+
+		# Model setup
+		# Add machines to model
+		g74_data = test_module.G74FaultInfeed()
+		g74_data.identify_machine_parameters()
+		g74_data.calculate_machine_mva_values()
+
+		# IEC method for fault current calculations
+		iec = test_module.IecFaults(psse=self.psse, buses=buses_to_test)
+
+		# Iterative loop that tests a range of fault times
+		dfs = list()
+
+		# Run calculation for all fault times
+		for fault_time in fault_times_to_test:
+
+			# Calculate new machine impedance values
+			g74_data.calculate_machine_impedance(fault_time=fault_time)
+
+			# Add machines to model
+			g74_data.add_machines()
+
+			if fault_time == constants.PSSE.min_fault_time:
+				self.psse.save_data_case(pth_sav=SAV_CASE_COMPLETE2)
+
+			# Run fault study for both busbars at this time step
+			df = iec.fault_study(fault_time=fault_time, lll=False, lg=True)
+			dfs.append(df)
+
+	def test_calculate_trying_to_calculate_two_faults_fails(self):
+		"""
+			Function tests calculation of LLL and LG fault times fails
+		:return:
+		"""
+		# Reload SAV case
+		self.psse.load_data_case()
+
+		# Bus numbers to test - These are busbars with motors directly contributing to a fault at
+		# this busbar
+		buses_to_test = [11, 33]
+		fault_time = 0.05
+
+		# Model setup
+		iec = test_module.IecFaults(psse=self.psse, buses=buses_to_test)
+
+		# Run fault study for both lll and lg and should raise a syntax error
+		self.assertRaises(SyntaxError, iec.fault_study, fault_time=fault_time, lll=True, lg=True)
+
+	def test_calculate_trying_to_calculate_no_faults_fails(self):
+		"""
+			Function tests calculation of LLL and LG fault times fails
+		:return:
+		"""
+		# Reload SAV case
+		self.psse.load_data_case()
+
+		# Bus numbers to test - These are busbars with motors directly contributing to a fault at
+		# this busbar
+		buses_to_test = [11, 33]
+		fault_time = 0.05
+
+		# Model setup
+		iec = test_module.IecFaults(psse=self.psse, buses=buses_to_test)
+
+		# Run fault study for both lll and lg and should raise a syntax error
+		self.assertRaises(ValueError, iec.fault_study, fault_time=fault_time, lll=False, lg=False)
+
+	def test_calculate_iec_method_lll(self):
+		"""
+			Confirms that the fault current contribution using the IEC method is calculated correctly for a 3 phase
+			fault
+
+		"""
+		# File constants
+		fault_times = list(np.arange(0.0001, 0.12, 0.01))
+		buses_to_fault = [1102, 3302]
+
+		# Load model
+		self.psse.load_data_case(pth_sav=SAV_CASE_COMPLETE)
+
+		# Model setup
+		# Add machines to model
+		g74_data = test_module.G74FaultInfeed()
+		g74_data.identify_machine_parameters()
+		g74_data.calculate_machine_mva_values()
+
+		# IEC method for fault current calculations
+		iec = test_module.IecFaults(psse=self.psse, buses=buses_to_fault)
+
+		df = iec.calculate_fault_currents(
+			fault_times=fault_times, g74_infeed=g74_data,
+			lll=True
+		)
+
+		# Confirm returned DataFrame is the expected shape
+		# TODO: Confirm some of the returned values are correct
+		self.assertEqual(df.shape, (2, 55))
+
+		pass
+
+	def test_calculate_iec_method_lg(self):
+		"""
+			Confirms that the fault current contribution using the IEC method is calculated correctly for LG faults
+
+		"""
+		# File constants
+		fault_times = list(np.arange(0.0001, 0.12, 0.01))
+		buses_to_fault = [1102, 3302]
+
+		# Load model
+		self.psse.load_data_case(pth_sav=SAV_CASE_COMPLETE)
+
+		# Model setup
+		# Add machines to model
+		g74_data = test_module.G74FaultInfeed()
+		g74_data.identify_machine_parameters()
+		g74_data.calculate_machine_mva_values()
+
+		# IEC method for fault current calculations
+		iec = test_module.IecFaults(psse=self.psse, buses=buses_to_fault)
+
+		df = iec.calculate_fault_currents(
+			fault_times=fault_times, g74_infeed=g74_data,
+			lll=False, lg=True
+		)
+
+		# Confirm returned DataFrame is the expected shape
+		# TODO: Confirm some of the returned values are correct
+		self.assertEqual(df.shape, (2, 55))
+
+		pass
 
 	@classmethod
 	def tearDownClass(cls):
@@ -803,7 +1008,7 @@ class TestPsseLoadData(unittest.TestCase):
 				self.psse.save_data_case(pth_sav=SAV_CASE_COMPLETE2)
 
 			# Run fault study for both busbars at this time step
-			df = iec.fault_3ph_all_buses(fault_time=fault_time)
+			df = iec.fault_study(fault_time=fault_time)
 			dfs.append(df)
 
 		# Combine DataFrames into an overall list
@@ -893,7 +1098,7 @@ class TestPsseLoadData(unittest.TestCase):
 			)
 
 			# Run fault study for both busbars at this time step
-			df = iec.fault_3ph_all_buses(fault_time=fault_time)
+			df = iec.fault_study(fault_time=fault_time)
 			dfs.append(df)
 
 		# Combine DataFrames into an overall list

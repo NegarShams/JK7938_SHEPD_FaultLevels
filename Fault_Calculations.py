@@ -90,7 +90,6 @@ def fault_study(
 	if sum(fault_types[0]):
 		df = bkdy.calculate_fault_currents(
 			fault_times=fault_times, g74_infeed=g74_data,
-			# #buses=buses_to_fault, delete=False
 			buses=buses,
 			delete=True
 		)

@@ -2087,11 +2087,15 @@ class IecFaults:
 		"""
 		self.logger = logging.getLogger(constants.Logging.logger_name)
 
-		# Check if bus subsystem needs defining
-		if len(buses) == 0:
-			psse.sid = -1
+		self.psse = psse
+
+		# Define bus subsystem based on buses
+		if buses:
+			self.psse.define_bus_subsystem(buses=buses)
+			self.logger.debug('Following busbars defined for fault analysis {}'.format(buses))
 		else:
-			psse.define_bus_subsystem(buses=buses)
+			self.logger.info('No busbars defined and so all busbars will be faulted')
+			self.psse.sid = -1
 
 		self.buses = buses
 		self.sid = psse.sid
@@ -2102,7 +2106,7 @@ class IecFaults:
 		self.result_coordinate = str()
 
 		# Set fault units and coordinates to the correct formats
-		psse.set_outputs()
+		self.psse.set_outputs()
 
 	def extract_value(self, value_to_convert, bus):
 		"""
@@ -2138,12 +2142,50 @@ class IecFaults:
 
 		return value
 
-	def fault_3ph_all_buses(self, fault_time):
+	def extract_impedance(self, value_to_convert, bus):
 		"""
-			Calculate three phase fault using IEC methodology
+			Function processes an individual result to extract the relevant format based on the output format
+			and in the case of impedance returns as R, X and Z values
+		:param complex value_to_convert:  Value that needs returning in the relevant format
+		:param int bus:  Relevant busbar number for this bus, required if extracting the unit data
+		:return (float, float, float) (R, X, Z): The converted impedance values in ohms
+		"""
+		if self.result_coordinate == 'rectangular':
+			# If rectangular then magnitude is given by absolute of complex number
+			z = abs(value_to_convert)
+			r = value_to_convert.real
+			x = value_to_convert.imag
+
+		elif self.result_coordinate == 'polar':
+			# If polar then first value is magnitude and second value is angle
+			z = value_to_convert.real
+			r = value_to_convert.real * math.cos(value_to_convert.imag)
+			x = value_to_convert.real * math.sin(value_to_convert.imag)
+		else:
+			self.logger.critical(
+				'Unexpected value <{}> returned for IEC fault current coordinates'.format(self.result_coordinate)
+			)
+			raise SyntaxError('Unexpected value returned for IEC fault current coordinates')
+
+		return r, x, z
+
+	def fault_study(self, fault_time, lll=True, lg=False):
+		"""
+			Calculate fault using IEC methodology for either a 3 phase or LG fault
 		:param float fault_time:  Breaker opening time
 		:return pd.DataFrame df:
 		"""
+		# IEC method does not allow a breaker opening time of 0.0 seconds and so adjusted to use a slightly larger value
+		# However, the motor values are still based on the same values.
+		if fault_time < constants.PSSE.min_fault_time:
+			self.logger.debug(
+				(
+					'Not possible to carry out IEC fault current calculation for {:.2f} seconds since it is less than '
+					'{:.2f} seconds.  A value of {:.2f} seconds is used instead.'
+				).format(fault_time, constants.PSSE.min_fault_time, constants.PSSE.min_fault_time)
+			)
+			fault_time = constants.PSSE.min_fault_time
+
 		# PSSE functions
 		func_iecs = pssarrays.iecs_currents
 
@@ -2159,6 +2201,18 @@ class IecFaults:
 		c = constants.BkdyFileOutput
 		df = pd.DataFrame()
 
+		# Get parameters appropriate for fault type
+		flt3ph = 0
+		fltlg = 0
+		if lll and lg:
+			raise SyntaxError('Only able to perform either 3Ph or L-G fault in a single calculation')
+		elif lll:
+			flt3ph = 1
+		elif lg:
+			fltlg = 1
+		else:
+			raise ValueError('No fault currents requested')
+
 		# Loop through each busbar and perform fault current calculation
 		for bus in buses_to_fault:
 			# Get the pre-fault voltage for this busbar
@@ -2166,7 +2220,8 @@ class IecFaults:
 			# TODO: Need to confirm parameters for IEC fault current calculation
 			iec_results = func_iecs(
 				sid=self.sid,
-				flt3ph=1,
+				flt3ph=flt3ph,
+				fltlg=fltlg,
 				fltloc=0,
 				# Line charging set to 1, 0.0 in positive and negative sequences
 				lnchrg=1,
@@ -2191,11 +2246,168 @@ class IecFaults:
 				self.result_unit = iec_results.scunit
 
 				bus_idx = iec_results.fltbus.index(bus)
-				df.loc[bus, c.ik11] = self.extract_value(iec_results.flt3ph[bus_idx].ia1, bus)
-				df.loc[bus, c.ip] = self.extract_value(iec_results.flt3ph[bus_idx].ipc, bus)
-				df.loc[bus, c.idc] = self.extract_value(iec_results.flt3ph[bus_idx].idc, bus)
-				df.loc[bus, c.ibsym] = self.extract_value(iec_results.flt3ph[bus_idx].ibsym, bus)
-				df.loc[bus, c.ibasym] = self.extract_value(iec_results.flt3ph[bus_idx].ibuns, bus)
 
-		# Return the DataFrame of the results for 3 phase faults
+				if lll:
+					# Define flt_data for 3 phase faults
+					flt_data = iec_results.flt3ph[bus_idx]
+					# Process results for a 3 phase fault
+					df.loc[bus, c.ik11] = self.extract_value(flt_data.ia1, bus)
+
+				elif lg:
+					# Process results for a LG fault
+					# Define flt_data for LG faults
+					flt_data = iec_results.fltlg[bus_idx]
+
+					# I0 == LG fault current Ik''/3 so multiply by 3 to get value
+					df.loc[bus, c.ik11] = self.extract_value(flt_data.ia0, bus) * 3
+
+				# Remaining values are not study specific
+				df.loc[bus, c.ip] = self.extract_value(flt_data.ipc, bus)
+				df.loc[bus, c.idc] = self.extract_value(flt_data.idc, bus)
+				df.loc[bus, c.ibsym] = self.extract_value(flt_data.ibsym, bus)
+				df.loc[bus, c.ibasym] = self.extract_value(flt_data.ibuns, bus)
+
+				# Extract impedance values
+				df.loc[bus, c.r], df.loc[bus, c.x], _ = self.extract_impedance(iec_results.thevz[bus_idx].z1, bus)
+
+		# Return the DataFrame of the results for completed faults
+		return df
+
+	def calculate_fault_currents(self, fault_times, g74_infeed, lll=True, lg=False):
+		"""
+			Function calculates the fault currents at every busbar listed taking into consideration
+			that the DC component and peak make has to be calculated based on t=0 and only the RMS
+			symmetrical component should be recalculated to account for decrement.
+
+			Two iterations of the fault current calculations are performed, one for every timestep with machines
+			initialised for time == 0ms and then for every timestep with machine parameters recalculated.
+		:param list fault_times:  List of the fault times that should be considered
+		:param G74FaultInfeed() g74_infeed:  Reference to the g74 handle so that machine parameters can be updated
+		:param list buses: (optional) List of busbars to be faulted if empty list then all busbars faulted
+		:return None:
+		"""
+		# Fault current calculation to determine Ik'', peak make and DC decrement
+		# Calculate the fault impedance values for the initial time of 0.0
+		g74_infeed.calculate_machine_impedance(fault_time=0.0, update=True)
+
+		# Initial fault must be carried out at 0.0 ms to get peak and Ik'' value
+		if constants.G74.min_fault_time not in fault_times:
+			fault_times.append(constants.G74.min_fault_time)
+			self.logger.warning(
+				(
+					'{:.2f} fault time missing from inputs.  This must be included to determine the '
+					'initial fault current.  This has been added to the fault'
+					'times'
+				).format(constants.G74.min_fault_time)
+			)
+
+		if constants.G74.peak_fault_time not in fault_times:
+			fault_times.append(constants.G74.peak_fault_time)
+			self.logger.warning(
+				(
+					'{:.2f} fault time missing from inputs.  This must be included to determine the '
+					'peak current value in line with G74.  This time has been added to the fault'
+					'times'
+				).format(constants.G74.peak_fault_time)
+			)
+
+		# Sort list of times into ascending order
+		fault_times.sort()
+
+		# TODO: Add in calculation for DC component and IC pk
+
+		# Loop through fault current studies producing fault files initially for ik'' and DC component decay
+		dfs = list()
+
+		for fault_time in fault_times:
+			# Recalculate machine parameters based on fault time
+			g74_infeed.calculate_machine_impedance(fault_time=fault_time, update=True)
+
+			# Run fault study for this result
+			_t = time.time()
+			self.logger.info(
+				(
+					'Calculating fault current {:.2f} after fault application to determine reduced AC component'
+				).format(fault_time)
+			)
+			df = self.fault_study(fault_time=fault_time, lll=lll, lg=lg)
+			dfs.append(df)
+			self.logger.info(
+				(
+					'Fault currents {:.2f} seconds after application completed in {:.2f} seconds'
+				).format(fault_time, time.time() - _t)
+			)
+
+		df = pd.concat(dfs, axis=1, keys=fault_times)
+		df = self.process_combined_results(df)
+		df = self.add_busbar_data(df)
+		return df
+
+	def process_combined_results(self, df):
+		"""
+			Function will loop through and process the complete set of results to produce the data that is
+			necessary for presenting
+		:param pd.DataFrame() df:
+		:return:
+		"""
+		#
+		self.logger.debug('Combining results')
+		dfs = dict()
+		# TODO: How to extract section of DataFrame at this point
+		for fault_time, df_section in df.groupby(level=0, axis=1):
+			# Extract relevant sections
+			if round(fault_time, 3) == constants.G74.min_fault_time:
+				df_temp = df_section[fault_time][constants.SHEPD.cols_for_min_fault_time]
+				# Calculate X/R value
+				df_temp[constants.General.x_r] = (
+					df_temp[constants.BkdyFileOutput.x].div(
+						df_temp[constants.BkdyFileOutput.r]
+					)
+				)
+			elif round(fault_time, 3) == constants.G74.peak_fault_time:
+				df_temp = df_section[fault_time][constants.SHEPD.cols_for_peak_fault_time]
+			else:
+				df_temp = df_section[fault_time][constants.SHEPD.cols_for_other_fault_time]
+
+			# Re-calculate asymmetrical fault current based on Iasym = sqrt(DC**2+((sqrt(2)SYM)**2)/2)
+			df_temp[constants.BkdyFileOutput.ibasym] = (
+					df_temp[constants.BkdyFileOutput.ibsym].mul(2**0.5).pow(2).div(2) +
+					df_temp[constants.BkdyFileOutput.idc].pow(2)
+			).pow(0.5)
+
+			# Produce a name for this set of results which includes the fault time in the desired units
+			name = '{} {}'.format(fault_time, constants.SHEPD.time_units)
+			# Add to DataFrame dictionary
+			dfs[name] = df_temp
+
+		df = pd.concat(dfs.values(), axis=1, keys=dfs.keys(), names=constants.SHEPD.output_headers)
+		df.sort_index(axis=1, level=0, inplace=True, ascending=True)
+		return df
+
+	def add_busbar_data(self, df):
+		"""
+			Function will add in busbar data to DataFrame
+		:param pd.DataFrame df:
+		:return:
+		"""
+		self.logger.debug('Adding busbar data to DataFrame')
+		# Constants
+		c = constants.General
+		# Get busbar data from PSSE model
+		bus_data = BusData()
+		# Populate new DAtaFrame with relevant technical data based on indexes of busbars already faulted
+		df_bus_data = pd.DataFrame(index=df.index)
+		df_bus_data.loc[:, c.bus_name] = bus_data.df.loc[:, bus_data.c.bus_name]
+		df_bus_data.loc[:, c.bus_voltage] = bus_data.df.loc[:, bus_data.c.nominal]
+		df_bus_data.loc[:, c.pre_fault] = bus_data.df.loc[:, bus_data.c.voltage]
+		# Convert to MultiIndex
+		df_bus_data.columns = pd.MultiIndex.from_product(
+			[[c.node_label], df_bus_data.columns],
+			names=constants.SHEPD.output_headers
+		)
+
+		# Merge DataFrames together
+		df = pd.concat([df_bus_data, df], axis=1)
+		df.index.name = c.bus_number
+
 		return df
