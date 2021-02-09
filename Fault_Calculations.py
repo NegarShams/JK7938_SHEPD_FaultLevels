@@ -7,6 +7,9 @@
 ###		project JK7938 - SHEPD - studies and automation																###
 ###																													###
 #######################################################################################################################
+
+TODO: Need to finish implementation of IEC method
+
 """
 
 # Modules to be imported first
@@ -81,21 +84,70 @@ def fault_study(
 	)
 	t = time.time()
 
-	# Save a temporary SAV case if necessary
+	# Save a temporary SAV case so can reload prior to carrying out either the BKDY or IEC fault study
 	if temp_sav_case:
 		psse_handler.save_data_case(pth_sav=temp_sav_case)
 
 	# TODO:  At this point want to add in also IEC fault study for LG
 	# Carry out fault current study for each time step
 	if sum(fault_types[0]):
-		df = bkdy.calculate_fault_currents(
+		# Fun BKDY - 3 Phase fault study and then write to Excel Workbook
+		df_bkdy = bkdy.calculate_fault_currents(
 			fault_times=fault_times, g74_infeed=g74_data,
 			buses=buses,
 			delete=True
 		)
 
+		# Export results to excel
+		g74.file_handling.write_fault_data_to_excel(
+			pth=excel_file, df=df_bkdy, message='BKDY 3Phase Fault Current Results',
+			sheet_name=constants.Excel.bkdy_sheet_name,
+			tab_color=constants.Excel.bkdy_tab_color
+		)
+
+		# Produce error message at end of output to report potential busbar fault error issues
+		if bkdy.unreliable_faulted_buses:
+			msg0 = (
+				'The following busbars had an issue carrying out the fault current study which has been reported above and '
+				'as such the value for these busbars is unreliable:'
+			)
+			msg1 = '\n'.join(['\t - {}'.format(bus) for bus in set(bkdy.unreliable_faulted_buses)])
+			logger.warning('{}\n{}'.format(msg0, msg1))
+
 	if sum(fault_types[1]):
-		raise SyntaxError('Code to correctly implement IEC faults has not been developed yet')
+		# Have to reload SAV case since the bkdy method will have converted the save case
+		psse_handler.load_data_case(pth_sav=temp_sav_case)
+
+		# IEC method for fault current calculations
+		iec = g74.psse.IecFaults(psse=psse_handler, buses=buses_to_fault)
+
+		if fault_types[1][0]:
+			local_logger.debug('Fault study being carried out for IEC LLL')
+			df_iec_lll = iec.calculate_fault_currents(
+				fault_times=fault_times, g74_infeed=g74_data,
+				lll=True, lg=False
+			)
+
+			# Export results to excel
+			g74.file_handling.write_fault_data_to_excel(
+				pth=excel_file, df=df_iec_lll, message='IEC 3Phase Fault Current Results',
+				sheet_name=constants.Excel.iec_sheet_name_lll,
+				tab_color=constants.Excel.iec_tab_color
+			)
+
+		if fault_types[1][1]:
+			local_logger.debug('Fault study being carried out for IEC LLL')
+			df_iec_lg = iec.calculate_fault_currents(
+				fault_times=fault_times, g74_infeed=g74_data,
+				lll=False, lg=True
+			)
+
+			# Export results to excel
+			g74.file_handling.write_fault_data_to_excel(
+				pth=excel_file, df=df_iec_lg, message='IEC Line-Ground Fault Current Results',
+				sheet_name=constants.Excel.iec_sheet_name_lg,
+				tab_color=constants.Excel.iec_tab_color
+			)
 
 	# Save temporary SAV case (if necessary)
 	if temp_sav_case:
@@ -103,16 +155,9 @@ def fault_study(
 	local_logger.info('Took {:.2f} seconds to carry out all fault current studies.'.format(time.time() - t))
 	t = time.time()
 
-	# Export results to excel
-	with pd.ExcelWriter(path=excel_file) as writer:
-		df.to_excel(writer, sheet_name='Fault I')
-		df.T.to_excel(writer, sheet_name='Fault I Transposed')
 	local_logger.info('Results written to Excel workbook: {}'.format(excel_file))
 	local_logger.info('Took {:.2f} seconds to save results'.format(time.time()-t))
 	t = time.time()
-
-	# Export tabulated data to PSSE
-	# TODO: Export tabulated data directly to PSSE window
 
 	# Will reload original SAV case if required
 	if reload_sav:
@@ -121,15 +166,6 @@ def fault_study(
 
 	# Restore output to defaults
 	psse_handler.change_output(destination=1)
-
-	# Produce error message at end of output to report potential busbar fault error issues
-	if bkdy.unreliable_faulted_buses:
-		msg0 = (
-			'The following busbars had an issue carrying out the fault current study which has been reported above and '
-			'as such the value for these busbars is unreliable:'
-		)
-		msg1 = '\n'.join(['\t - {}'.format(bus) for bus in set(bkdy.unreliable_faulted_buses)])
-		logger.warning('{}\n{}'.format(msg0, msg1))
 
 	local_logger.info(
 		'Took {:.2f} seconds to reload SAV case and export warning messages (if any)'.format(time.time()-t)

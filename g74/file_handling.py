@@ -12,7 +12,11 @@
 import string
 import logging
 import pandas as pd
+import xlsxwriter
 import g74.constants as constants
+
+# Engine to use for writing to excel, has to be XlsxWriter to ensure tab colours can be changed
+excel_engine = 'xlsxwriter'
 
 
 def colnum_string(n):
@@ -67,3 +71,95 @@ def import_busbars_list(path, sheet_number=0):
 
 	list_of_busbars = list(busbars_series[~list_of_errors])
 	return list_of_busbars
+
+
+def worksheet_name_checker(wkbk, sheet_name):
+	"""
+		Function checks if a worksheet already exists in a workbook and if it does then instead returns a different name
+		to use
+	:param pd.ExcelWriter wkbk:  Instance of excel workbook to check
+	:param str sheet_name:  Proposed sheet_name
+	:return str sheet_name:  Resulting sheet_name
+	"""
+	logger = logging.getLogger(constants.Logging.logger_name)
+
+	# Check if sheet already exists
+	i = 0
+	orig_sheet_name = sheet_name
+	sheet_already_exists = sheet_name in wkbk.book.sheetnames.keys()
+
+	# If sheet already exists then loop through until a name is found that doesn't clash
+	while sheet_already_exists:
+		# Iterate counter
+		i += 1
+		# Rename sheet to include (i) at the end
+		sheet_name = '{}({})'.format(orig_sheet_name, i)
+		sheet_already_exists = sheet_name in wkbk.book.sheetnames.keys()
+
+		if i > 100:
+			logger.critical(
+				(
+					'When trying to find a unique worksheet with name {} in workbook {} reached {} iterations which '
+					'suggests either {} worksheets with the name {} already exist or there is some other error.'
+				).format(sheet_name, wkbk.path, i, sheet_name, i-1)
+			)
+			raise StopIteration('Very high number of iterations to stopping, check error message above')
+
+	if orig_sheet_name != sheet_name:
+		logger.warning(
+			(
+				'The worksheet named {} already exists in the excel workbook {} and rather than being overwritten a new '
+				'sheet will be created with the name {}'
+			).format(orig_sheet_name, wkbk.path, sheet_name)
+		)
+
+	return sheet_name
+
+
+def write_fault_data_to_excel(pth, df, message, sheet_name, tab_color=None):
+	"""
+		Function deals with writing a DataFrame to excel for the fault current data and ensures a message
+		is added along with the correct sheet name and location
+	:param str pth:  Full path to excel workbook to write
+	:param pd.DataFrame df:  Pandas Dataframe to write
+	:param str message:  Message to include on first row
+	:param str sheet_name:  Name of sheet to use (an additional sheet is also created with the name transposed)
+	:param str tab_color:  Hexidemical code for tab_color to use
+	:return None:
+	"""
+	logger = logging.getLogger(constants.Logging.logger_name)
+
+	# Load workbook
+	with pd.ExcelWriter(path=pth, engine=excel_engine) as wkbk:
+		# Confirm sheet name isn't duplicated and then create new sheet
+		sheet_name = worksheet_name_checker(wkbk=wkbk, sheet_name=sheet_name)
+		wksh = wkbk.book.add_worksheet(name=sheet_name)
+
+		# Create name for transposed sheet as well
+		sheet_name_transposed = worksheet_name_checker(wkbk=wkbk, sheet_name='{}_transposed'.format(sheet_name))
+		wksh_t = wkbk.book.add_worksheet(name=sheet_name_transposed)
+
+		# Have to add worksheet to Pandas list of worksheets
+		# (https://stackoverflow.com/questions/32957441/putting-many-python-pandas-dataframes-to-one-excel-worksheet)
+		wkbk.sheets[sheet_name] = wksh
+		logger.debug('New worksheet named {} added to workbook {}'.format(sheet_name, wkbk.path))
+		wkbk.sheets[sheet_name_transposed] = wksh_t
+		logger.debug('New worksheet named {} added to workbook {}'.format(sheet_name_transposed, wkbk.path))
+
+		# Write some details on the status first and colour the tab accordingly
+		row = 0
+		col = 0
+		wksh.write_string(row=row, col=col, string=message)
+		wksh_t.write_string(row=row, col=col, string=message)
+		# Only set tab_color if not None
+		if tab_color:
+			wksh.set_tab_color(tab_color)
+			wksh_t.set_tab_color(tab_color)
+
+		# Write DataFrame to excel worksheet
+		df.to_excel(wkbk, sheet_name=sheet_name, startrow=row+constants.Excel.row_spacing)
+		logger.debug('DataFrame written to worksheet {}'.format(sheet_name))
+		df.T.to_excel(wkbk, sheet_name=sheet_name_transposed, startrow=row+constants.Excel.row_spacing)
+		logger.debug('Transposed DataFrame written to worksheet {}'.format(sheet_name_transposed))
+
+	return None

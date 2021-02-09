@@ -534,6 +534,49 @@ class TestIECComponents(unittest.TestCase):
 
 		pass
 
+	def test_extract_lll_fault_results_example(self):
+		"""
+			Confirms that the fault current contribution is extracted correctly
+		"""
+		# Test export file
+		test_psse_export = os.path.join(TESTS_DIR, 'iec_3ph_export.xlsx')
+		# Confirm doesn't exist and if it does then delete
+		if os.path.isfile(test_psse_export):
+			os.remove(test_psse_export)
+
+		# File constants
+		fault_times = [0.05]
+
+		# Load model
+		self.psse.load_data_case(pth_sav=SAV_CASE_COMPLETE)
+
+		# Model setup
+		# Add machines to model
+		g74_data = test_module.G74FaultInfeed()
+		g74_data.identify_machine_parameters()
+		g74_data.calculate_machine_mva_values()
+
+		# IEC method for fault current calculations
+		iec = test_module.IecFaults(psse=self.psse)
+
+		df = iec.calculate_fault_currents(
+			fault_times=fault_times, g74_infeed=g74_data,
+			lll=True
+		)
+
+		# Write to excel file using writer as part of file_handling
+		g74.file_handling.write_fault_data_to_excel(
+			pth=test_psse_export, df=df, message='FAULT CURRENT TEST OUTPUT',
+			sheet_name=g74.constants.Excel.iec_sheet_name_lll,
+			tab_color=g74.constants.Excel.iec_tab_color
+		)
+
+		# Save final PSSE model for further investigation
+		self.psse.save_data_case(pth_sav=os.path.join(TESTS_DIR, 'IEC_SAV_EXTRACT.sav'))
+
+		# Confirm file exists
+		self.assertTrue(os.path.isfile(test_psse_export))
+
 	def test_calculate_iec_method_lg(self):
 		"""
 			Confirms that the fault current contribution using the IEC method is calculated correctly for LG faults
@@ -690,7 +733,10 @@ class TestBkdyIntegration(unittest.TestCase):
 		buses_to_fault = [1102, 3302]
 		excel_export = os.path.join(TESTS_DIR, 'excel_export_g74{}'.format('.xlsx'))
 
-		# #names = ['{:.0f} ms'.format(x*1000) for x in fault_times]
+		# Parameters to use for checking calculation
+		pre_fault_v = 1.0
+		# Load value modelled as 5.0 MVA in PSSe test model
+		load_value = 5.0
 
 		# Load model
 		self.psse.load_data_case(pth_sav=SAV_CASE_COMPLETE)
@@ -699,6 +745,9 @@ class TestBkdyIntegration(unittest.TestCase):
 		bkdy = g74.psse.BkdyFaultStudy(psse_control=self.psse)
 		bkdy.create_breaker_duty_file(target_path=idev_file)
 
+		# Switch off slack machine connect to 1102 so doesn't contribute to fault current for testing
+		self.psse.switch_machine(i=1102, id='1')
+
 		# Update model to include contribution from embedded machines
 		g74_data = g74.psse.G74FaultInfeed()
 		g74_data.identify_machine_parameters()
@@ -706,8 +755,40 @@ class TestBkdyIntegration(unittest.TestCase):
 
 		df = bkdy.calculate_fault_currents(
 			fault_times=fault_times, g74_infeed=g74_data,
-			buses=buses_to_fault, delete=True
+			buses=buses_to_fault, delete=False
 		)
+
+		# Calculate expected values for each fault time
+		# Iterative loop that tests a range of fault times
+		dfs = list()
+		expected_f33_infeed_pu = list()
+		expected_f11_infeed_pu = list()
+
+		# R values remain constant for all fault times
+		new_r33_value = constants.G74.rpos
+		new_r11_value = new_r33_value - constants.G74.tx_r
+		for fault_time in fault_times:
+			# Calculate the expected X value and expected fault in feed in per unit
+			# Target busbar is 11kV so need to account for 11/33kV transformer impedance
+			if fault_time > constants.PSSE.min_fault_time:
+				new_x33_value = 1.0 / ((1.0 / constants.G74.x11) * math.exp(-fault_time / constants.G74.t11))
+			else:
+				new_x33_value = constants.G74.x11
+
+			new_x11_value = new_x33_value - constants.G74.tx_x
+
+			expected_f33_infeed_pu.append(pre_fault_v/(new_r33_value**2 + new_x33_value**2)**0.5)
+			expected_f11_infeed_pu.append(pre_fault_v/(new_r11_value**2 + new_x11_value**2)**0.5)
+
+		# Calculate the values that would be expected based on the fault times tested
+		expected_values_11 = dict(zip(
+			fault_times,
+			[x*load_value*constants.G74.mva_11/(math.sqrt(3)*11.0) for x in expected_f11_infeed_pu]
+		))
+		expected_values_33 = dict(zip(
+			fault_times,
+			[x*load_value*constants.G74.mva_33/(math.sqrt(3)*33.0) for x in expected_f33_infeed_pu]
+		))
 
 		# Check if any of the paths already exist and if they do delete them
 		for path in (excel_export, SAV_CASE_COMPLETE2):
@@ -722,6 +803,47 @@ class TestBkdyIntegration(unittest.TestCase):
 		for path in (SAV_CASE_COMPLETE2, idev_file):
 			self.assertTrue(os.path.exists(path))
 			os.remove(path)
+
+	def test_bkdy_3ph_export(self):
+		"""
+			Carries out a fault study using BKDY method for a 3phase fault and extract to a spreadsheet
+		"""
+		# File to save exported results to
+		test_psse_export = os.path.join(TESTS_DIR, 'bkdy_3ph_export.xlsx')
+
+		# File constants
+		idev_file = os.path.join(TESTS_DIR, 'test{}'.format(constants.PSSE.ext_bkd))
+		fault_times = [0.05]
+
+		# Confirm file doesn't already exist and if it does then delete it
+		if os.path.isfile(test_psse_export):
+			os.remove(test_psse_export)
+
+		# Load model
+		self.psse.load_data_case(pth_sav=SAV_CASE_COMPLETE)
+
+		# Create circuit breaker duty file
+		bkdy = g74.psse.BkdyFaultStudy(psse_control=self.psse)
+		bkdy.create_breaker_duty_file(target_path=idev_file)
+
+		# Update model to include contribution from embedded machines
+		g74_data = g74.psse.G74FaultInfeed()
+		g74_data.identify_machine_parameters()
+		g74_data.calculate_machine_mva_values()
+
+		df = bkdy.calculate_fault_currents(
+			fault_times=fault_times, g74_infeed=g74_data, delete=True
+		)
+
+		# Write to excel file using writer
+		g74.file_handling.write_fault_data_to_excel(
+			pth=test_psse_export, df=df, message='FAULT CURRENT TEST OUTPUT',
+			sheet_name=g74.constants.Excel.bkdy_sheet_name,
+			tab_color=g74.constants.Excel.bkdy_tab_color
+		)
+
+		# Confirm file exists
+		self.assertTrue(os.path.isfile(test_psse_export))
 
 	def test_infinity_in_results_handled_correctly(self):
 		"""

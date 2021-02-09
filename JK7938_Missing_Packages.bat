@@ -33,9 +33,12 @@ REM """
 @echo off
 echo "Defining target directories for python package installation and finding python executable"
 REM define variables for current directory and target directory for the packages to be installed in
-set current_dir="%cd%"
+REM set current_dir="%cd%"
+set current_dir=%~dp0
+set package_dir=%current_dir%\python_wheels
 set target_dir=%current_dir%\local_packages
 
+echo "Python packages should be located in: "%package_dir%
 echo "Python packages will be installed here: "%target_dir%
 
 REM If the target directory for the new scripts does not exist then this will be created
@@ -64,7 +67,7 @@ REM Break command to exit for loop once python file has been found to avoid cont
 echo "Python installation found here: ""%pythonpath%
 
 REM Define pip executable file which will be used to install all the wheels
-set pip_execute=%current_dir%\pip-19.3.1-py2.py3-none-any.whl/pip
+set pip_execute=%package_dir%\pip-19.3.1-py2.py3-none-any.whl/pip
 
 REM Install each of the defined wheel files in the local directory, forcing a replacement if they already exist
 REM and avoiding the downloading of dependencies.  Therefore all dependencies will need to be installed manually in
@@ -72,18 +75,19 @@ REM here.
 REM Output turned on so progress of installation can be monitored
 echo on
 echo "Any errors mean a package did not install and should be investigated further"
-%pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %current_dir%\setuptools-41.6.0-py2.py3-none-any.whl
-%pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %current_dir%\six-1.12.0-py2.py3-none-any.whl
-%pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %current_dir%\numpy-1.16.5-cp27-cp27m-win32.whl
-%pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %current_dir%\xlrd-1.2.0-py2.py3-none-any.whl
-%pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %current_dir%\xlwt-1.3.0-py2.py3-none-any.whl
-%pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %current_dir%\python_dateutil-2.8.1-py2.py3-none-any.whl
-%pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %current_dir%\pytz-2019.3-py2.py3-none-any.whl
-%pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %current_dir%\et_xmlfile-1.0.1-cp27-none-any.whl
-%pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %current_dir%\openpyxl-2.6.4-py2.py3-none-any.whl
-%pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %current_dir%\jdcal-1.4.1-py2.py3-none-any.whl
-%pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %current_dir%\pandas-0.24.2-cp27-cp27m-win32.whl
-%pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %current_dir%\Pillow-6.2.1-cp27-cp27m-win32.whl
+%pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %package_dir%\setuptools-41.6.0-py2.py3-none-any.whl
+%pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %package_dir%\six-1.12.0-py2.py3-none-any.whl
+%pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %package_dir%\numpy-1.16.5-cp27-cp27m-win32.whl
+%pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %package_dir%\xlrd-1.2.0-py2.py3-none-any.whl
+%pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %package_dir%\xlwt-1.3.0-py2.py3-none-any.whl
+%pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %package_dir%\python_dateutil-2.8.1-py2.py3-none-any.whl
+%pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %package_dir%\pytz-2019.3-py2.py3-none-any.whl
+%pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %package_dir%\et_xmlfile-1.0.1-cp27-none-any.whl
+%pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %package_dir%\openpyxl-2.6.4-py2.py3-none-any.whl
+%pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %package_dir%\jdcal-1.4.1-py2.py3-none-any.whl
+%pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %package_dir%\pandas-0.24.2-cp27-cp27m-win32.whl
+%pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %package_dir%\Pillow-6.2.1-cp27-cp27m-win32.whl
+%pythonpath% %pip_execute% install --no-deps --target=%target_dir% --upgrade --force-reinstall %package_dir%\XlsxWriter-1.2.9-py2.py3-none-any.whl
 
 echo "All python packages have been installed."
 exit

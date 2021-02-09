@@ -43,9 +43,7 @@ class General:
 
 
 class GUI:
-	"""
-		Constants for the user interface
-	"""
+	""" Constants for the user interface """
 	gui_name = 'PSC G74 Fault Current Tool'
 	# 0.00 and 0.01 removed since these fault times will be added anyway
 	default_fault_times = '0.06'
@@ -403,6 +401,19 @@ class Excel:
 	fixed_shunts = 'Fixed Shunts'
 	switched_shunts = 'Switched Shunts'
 	machine_data = 'Machines'
+
+	# Default values to use for spacing of rows and columns in output results
+	col_spacing = 2
+	row_spacing = 2
+
+	# Colours to use for tabs of different result types
+	bkdy_tab_color = 'orange'
+	iec_tab_color = 'blue'
+
+	# Names to use for results export
+	bkdy_sheet_name = 'BKDY Method'
+	iec_sheet_name_lll = 'IEC Method LLL'
+	iec_sheet_name_lg = 'IEC Method LG'
 
 	def __init__(self):
 		pass

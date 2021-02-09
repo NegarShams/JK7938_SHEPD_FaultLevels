@@ -1220,6 +1220,21 @@ class PsseControl:
 			raise ValueError('DataFrame is empty, nothing to write')
 		_ = psspy.report_output(islct=1)
 
+	def switch_machine(self, i, id):
+		"""
+			Function to switch machine to out of service, used for testing
+		:param int i:
+		:param str id:
+		:return None:
+		"""
+		func = psspy.machine_chng_2
+
+		ierr = func(i=i, id=id, intgar1=0)
+
+		if ierr > 0:
+			self.logger.critical('Unable to switch out machine {} connected to busbar {}'.format(id, i))
+
+
 
 class PsseSlider:
 	"""
@@ -1317,7 +1332,8 @@ class BkdyFaultStudy:
 
 	def create_breaker_duty_file(self, target_path):
 		"""
-			Creates the create breaker duty files
+			Creates the breaker duty files which detail the machine source impedance data for each value of
+			impedance
 		:param str target_path: Target path to save the file to
 		:return None:
 		"""
@@ -2173,6 +2189,8 @@ class IecFaults:
 		"""
 			Calculate fault using IEC methodology for either a 3 phase or LG fault
 		:param float fault_time:  Breaker opening time
+		:param bool lll: Whether to carry out LLL fault study
+		:param bool lg: Whether to carry out LG fault study
 		:return pd.DataFrame df:
 		"""
 		# IEC method does not allow a breaker opening time of 0.0 seconds and so adjusted to use a slightly larger value
